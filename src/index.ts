@@ -1,6 +1,5 @@
 import { generateNotes } from './generate-notes';
 
-// Export only the generateNotes function
-export default {
-  generateNotes
-};
+// Export for semantic-release - needs both default and named exports
+export { generateNotes };
+export default { generateNotes };

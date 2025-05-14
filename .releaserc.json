@@ -2,9 +2,7 @@
   "branches": ["main"],
   "plugins": [
     "@semantic-release/commit-analyzer",
-    ["semantic-release-claude-changelog", {
-      "generateNotes": true
-    }],
+    "@semantic-release/release-notes-generator",
     ["@semantic-release/npm", {
       "npmPublish": true,
       "tarballDir": "dist"
