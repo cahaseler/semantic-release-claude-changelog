@@ -1,6 +1,6 @@
 {
   "name": "semantic-release-claude-changelog",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Semantic Release plugin that uses Claude Code CLI to generate high quality release notes",
   "main": "lib/index.js",
   "files": [
@@ -44,6 +44,7 @@
     "typescript": "^5.0.4"
   },
   "dependencies": {
-    "execa": "^5.1.1"
+    "execa": "^5.1.1",
+    "semantic-release-claude-changelog": "^1.1.0"
   }
 }
