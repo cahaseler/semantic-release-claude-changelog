@@ -44,7 +44,6 @@
     "typescript": "^5.0.4"
   },
   "dependencies": {
-    "execa": "^5.1.1",
-    "semantic-release-claude-changelog": "^1.1.0"
+    "execa": "^5.1.1"
   }
 }
