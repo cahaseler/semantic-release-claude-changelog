@@ -1,0 +1,12 @@
+node_modules/
+lib/
+coverage/
+.DS_Store
+*.log
+**/.claude/settings.local.json
+
+# Local environment files
+.env
+
+# Integration test artifacts
+integration-test/generated-notes.md

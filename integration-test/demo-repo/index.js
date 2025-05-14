@@ -1,0 +1,1 @@
+console.log('Demo repository for semantic-release-claude-changelog testing');

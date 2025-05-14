@@ -1,0 +1,19 @@
+{
+  "name": "semantic-release-claude-test",
+  "version": "0.0.0-development",
+  "description": "Test repository for semantic-release-claude-changelog",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"No tests specified\" && exit 0",
+    "semantic-release": "semantic-release"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/test/demo-repo.git"
+  },
+  "author": "Test User",
+  "license": "MIT",
+  "devDependencies": {
+    "semantic-release": "^21.0.0"
+  }
+}
