@@ -1,10 +1,8 @@
-import * as index from '../index';
+import indexDefault from '../index';
 
 describe('index', () => {
-  it('should export prepare and generateNotes functions', () => {
-    expect(index.prepare).toBeDefined();
-    expect(index.generateNotes).toBeDefined();
-    expect(typeof index.prepare).toBe('function');
-    expect(typeof index.generateNotes).toBe('function');
+  it('should export the generateNotes function', () => {
+    expect(indexDefault.generateNotes).toBeDefined();
+    expect(typeof indexDefault.generateNotes).toBe('function');
   });
 });

@@ -1,4 +1,6 @@
-import { prepare } from './prepare';
 import { generateNotes } from './generate-notes';
 
-export { prepare, generateNotes };
+// Export only the generateNotes function
+export default {
+  generateNotes
+};
