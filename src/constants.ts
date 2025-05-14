@@ -18,7 +18,7 @@ The release notes should:
 2. Translate technical commit messages into user-friendly descriptions
 3. Highlight important changes that users should be aware of
 4. Be concise but informative
-5. Use Markdown formatting
+5. Use Markdown formatting with bold titles using ** for emphasis
 
 Focus on explaining what's new or changed from an end-user perspective, rather than implementation details. Omit commits that are purely technical (e.g., "fix typo", "merge branch", etc.) unless they fix important user-facing issues.
 
