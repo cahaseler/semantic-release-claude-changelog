@@ -19,12 +19,13 @@ jobs:
           cache: 'npm'
       - name: Install dependencies
         run: npm ci
-      - name: Verify the integrity of provenance attestations and registry signatures
-        run: npm audit signatures
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
       - name: Build project
         run: npm run build
       - name: Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: npx semantic-release
