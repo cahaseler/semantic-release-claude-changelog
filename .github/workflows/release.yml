@@ -19,8 +19,10 @@ jobs:
           cache: 'npm'
       - name: Install dependencies
         run: npm ci
-      - name: Install Claude Code CLI
-        run: npm install -g @anthropic-ai/claude-code
+      - name: Install required packages
+        run: |
+          npm install -g @anthropic-ai/claude-code
+          npm install semantic-release-claude-changelog
       - name: Build project
         run: npm run build
       - name: Release
