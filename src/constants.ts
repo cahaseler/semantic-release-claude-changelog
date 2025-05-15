@@ -72,5 +72,5 @@ Your response must ONLY contain the release notes in Markdown format - nothing e
  * Plugin error messages
  */
 export const ERROR_MESSAGES = {
-  CLAUDE_NOT_FOUND: 'Claude Code CLI is required for this plugin. Please make sure it is installed and available in your PATH.'
+  CLAUDE_NOT_FOUND: 'Claude Code CLI is required for this plugin. Please install it separately with: npm install -g @anthropic-ai/claude-code'
 };
