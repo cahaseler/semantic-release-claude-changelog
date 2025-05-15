@@ -18,7 +18,7 @@ Additional context information:
 \`\`\`
 {{/additionalContext}}
 
-IMPORTANT: Your response must contain ONLY the release notes in Markdown format, with no additional text, commentary, or explanations about your process. DO NOT include any phrases like "Based on my analysis" or "Here are the release notes".
+IMPORTANT: Your response must contain ONLY the release notes in Markdown format, with no additional text, commentary, or explanations about your process. DO NOT include any phrases like "Based on my analysis" or "Here are the release notes". Start DIRECTLY with the markdown heading for the version (e.g., "## 1.2.3 (2023-05-15)").
 
 The release notes should:
 
@@ -73,7 +73,7 @@ EXAMPLE 3:
 - **Memory Usage**: Reduced memory consumption during large changelog generation
 \`\`\`
 
-Your response must ONLY contain the release notes in Markdown format - nothing else. Start directly with the version header.
+Your response must ONLY contain the release notes in Markdown format - nothing else. Start directly with the version header (## followed by the version number).
 `;
 
 /**

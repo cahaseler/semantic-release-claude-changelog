@@ -1,6 +1,9 @@
 import { generateNotes } from '../generate-notes';
 import { getCommits } from '../get-commits';
 
+// Import the extractReleaseNotes function for testing
+import { extractReleaseNotes } from '../generate-notes';
+
 // Mock dependencies
 jest.mock('../get-commits');
 jest.mock('fs', () => ({
@@ -228,5 +231,70 @@ describe('generateNotes', () => {
     const promptArg = fs.writeFileSync.mock.calls[0][1];
     expect(promptArg).toContain('Custom template 1.0.0');
     expect(promptArg).toContain('Additional context information');
+  });
+});
+
+describe('extractReleaseNotes', () => {
+  const version = '1.2.3';
+  
+  it('should extract notes starting with version header', () => {
+    const input = `Now I'll analyze the commits and create the release notes.
+    
+## ${version} (2023-05-15)
+
+### Features
+- Feature 1
+- Feature 2
+
+### Bug Fixes
+- Fix 1`;
+    
+    const result = extractReleaseNotes(input, version);
+    expect(result).toBe(`## ${version} (2023-05-15)
+
+### Features
+- Feature 1
+- Feature 2
+
+### Bug Fixes
+- Fix 1`);
+  });
+  
+  it('should handle version with date format', () => {
+    const input = `Let me analyze these commits for you.
+    
+## ${version} (2023-05-15)
+
+### Features
+- Feature 1`;
+    
+    const result = extractReleaseNotes(input, version);
+    expect(result).toBe(`## ${version} (2023-05-15)
+
+### Features
+- Feature 1`);
+  });
+  
+  it('should find any markdown h2 header if exact version not found', () => {
+    const input = `I'll generate release notes based on these commits.
+    
+## Release Notes (${version})
+
+### Features
+- Feature 1`;
+    
+    const result = extractReleaseNotes(input, version);
+    expect(result).toBe(`## Release Notes (${version})
+
+### Features
+- Feature 1`);
+  });
+  
+  it('should return original text if no headers found', () => {
+    const input = `No headers in this text.
+Just some random content without markdown headers.`;
+    
+    const result = extractReleaseNotes(input, version);
+    expect(result).toBe(input);
   });
 });
