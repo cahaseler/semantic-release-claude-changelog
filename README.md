@@ -53,24 +53,26 @@ Here are the commits that were included in this release:
 {{commits}}
 \`\`\`
 
-Please create human-readable, user-focused release notes from these commits. The release notes should:
+IMPORTANT: Your response must contain ONLY the release notes in Markdown format, with no additional text, commentary, or explanations about your process. DO NOT include any phrases like "Based on my analysis" or "Here are the release notes".
+
+The release notes should:
 
 1. Group changes by type (features, improvements, bug fixes, etc.)
 2. Translate technical commit messages into user-friendly descriptions
 3. Highlight important changes that users should be aware of
 4. Be concise but informative
-5. Use Markdown formatting
+5. Use Markdown formatting with bold titles using ** for emphasis
 
 Focus on explaining what's new or changed from an end-user perspective, rather than implementation details. Omit commits that are purely technical (e.g., "fix typo", "merge branch", etc.) unless they fix important user-facing issues.
 
-Format the notes with a clean structure using Markdown, starting with a brief summary of the release.
+Your response must ONLY contain the release notes in Markdown format - nothing else. Start directly with the version header.
 ```
 
 You can customize this template to match your project's needs.
 
 ## GitHub Actions Configuration
 
-When using this plugin in GitHub Actions, make sure to set up the ANTHROPIC_API_KEY:
+When using this plugin in GitHub Actions, you need to install Claude Code CLI and set up the ANTHROPIC_API_KEY:
 
 ```yaml
 jobs:
@@ -84,9 +86,11 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: "lts/*"
+          node-version: 20
       - name: Install dependencies
         run: npm ci
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
       - name: Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -129,13 +133,16 @@ The integration test:
 
 ## How It Works
 
-1. During the `prepare` step, the plugin installs Claude Code CLI and verifies it's working correctly.
-2. In the `generateNotes` step, the plugin:
+The plugin focuses solely on generating release notes and works as follows:
+
+1. In the `generateNotes` step, the plugin:
    - Gets commits between the last release and the current one
    - Formats the commit information
    - Applies the prompt template
    - Calls Claude Code CLI in headless mode
    - Parses the response and returns the generated release notes
+
+Note: You need to install Claude Code CLI separately as this plugin no longer handles the installation during the prepare step.
 
 ## License
 
