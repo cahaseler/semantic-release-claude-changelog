@@ -40,6 +40,7 @@ The plugin can be configured in the [**semantic-release** configuration file](ht
 | `promptTemplate` | Template for the prompt sent to Claude | See [Default Prompt Template](#default-prompt-template) |
 | `maxCommits` | Maximum number of commits to include in the prompt | `100` |
 | `additionalContext` | Additional context information (PRs, issues, etc.) | `undefined` |
+| `cleanOutput` | Whether to automatically extract only the release notes section | `true` |
 
 ### Default Prompt Template
 
@@ -78,6 +79,33 @@ Your response must ONLY contain the release notes in Markdown format - nothing e
 ```
 
 You can customize this template to match your project's needs.
+
+### Output Cleaning
+
+By default, the plugin will attempt to clean Claude's response to extract only the actual release notes section. This is done by:
+
+1. Looking for a markdown header containing the version number (e.g., `## 1.2.0`)
+2. Extracting everything from that header to the end of the text
+3. Removing any preamble text that Claude might add (like "Now I'll analyze these commits...")
+
+This ensures the final release notes are clean and ready to use without manual editing.
+
+You can disable this behavior by setting `cleanOutput: false` in your configuration:
+
+```json
+{
+  "plugins": [
+    "@semantic-release/commit-analyzer",
+    ["semantic-release-claude-changelog", {
+      "cleanOutput": false
+    }],
+    "@semantic-release/npm",
+    "@semantic-release/github"
+  ]
+}
+```
+
+If you're using a custom prompt that doesn't follow the standard markdown header format, you might want to disable automatic cleaning.
 
 ### Using Additional Context
 

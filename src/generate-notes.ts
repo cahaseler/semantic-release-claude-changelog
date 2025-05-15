@@ -6,6 +6,33 @@ import { writeFileSync, unlinkSync } from 'fs';
 import { getCommits } from './get-commits';
 import execa from 'execa';
 
+/**
+ * Extracts the actual release notes section from Claude's response
+ * Looks for a markdown header containing the version number as the start point
+ */
+export function extractReleaseNotes(text: string, version: string): string {
+  // First, try to find a header with the exact version number
+  // Escape backslashes first, then dots to prevent security issues with incomplete string escaping
+  const versionHeaderRegex = new RegExp(`^##\\s+${version.replace(/\\/g, '\\\\').replace(/\./g, '\\.')}\\b`, 'm');
+  const versionHeaderMatch = text.match(versionHeaderRegex);
+  
+  if (versionHeaderMatch && versionHeaderMatch.index !== undefined) {
+    // Return everything from the version header to the end
+    return text.substring(versionHeaderMatch.index);
+  }
+  
+  // If we can't find the exact version, look for any markdown h2 header
+  // This handles cases where version might be formatted differently (with date, etc.)
+  const anyHeaderMatch = text.match(/^##\s+/m);
+  if (anyHeaderMatch && anyHeaderMatch.index !== undefined) {
+    return text.substring(anyHeaderMatch.index);
+  }
+  
+  // If we still can't find a proper header, return the original text
+  // At least we tried to clean it up!
+  return text;
+}
+
 // Define interfaces for Claude output format
 interface TextBlock {
   type: string;
@@ -35,7 +62,8 @@ export async function generateNotes(
   const {
     claudePath = 'claude',
     promptTemplate = DEFAULT_PROMPT_TEMPLATE,
-    maxCommits = 100
+    maxCommits = 100,
+    cleanOutput = true
   } = pluginConfig;
 
   // Get relevant commits between last and current release
@@ -268,7 +296,18 @@ export async function generateNotes(
     }
     
     logger.log('Successfully generated release notes');
-    return responseText.trim();
+    
+    // If cleanOutput is enabled, extract just the release notes section
+    if (cleanOutput) {
+      // Look for a markdown header with the version number as the starting point
+      const cleanedResponse = extractReleaseNotes(responseText, context.nextRelease?.version || 'unknown');
+      logger.log('Cleaned release notes to remove any AI preamble');
+      return cleanedResponse.trim();
+    } else {
+      // Return the raw output if cleaning is disabled
+      logger.log('Skipping output cleaning (disabled by configuration)');
+      return responseText.trim();
+    }
   } catch (error) {
     logger.error('Error generating release notes with Claude', error);
     return '## Release Notes\n\nNo release notes generated due to an error.';

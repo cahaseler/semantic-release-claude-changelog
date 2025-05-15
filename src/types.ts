@@ -43,4 +43,12 @@ export interface PluginConfig {
    * This can be populated by GitHub Actions or other CI systems
    */
   additionalContext?: Record<string, any>;
+  
+  /**
+   * Whether to clean the output and extract only the release notes section
+   * When true, the plugin will attempt to find a markdown header with the version number
+   * and extract only that section, removing any AI preamble
+   * @default true
+   */
+  cleanOutput?: boolean;
 }
