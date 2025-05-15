@@ -1,0 +1,19 @@
+{
+  "branches": ["main"],
+  "plugins": [
+    "@semantic-release/commit-analyzer",
+    ["semantic-release-claude-changelog", {
+      "additionalContext": {
+        "repository": "{{ fromJSON(env.ADDITIONAL_CONTEXT).repository }}",
+        "pullRequests": "{{ fromJSON(env.ADDITIONAL_CONTEXT).pullRequests }}",
+        "issues": "{{ fromJSON(env.ADDITIONAL_CONTEXT).issues }}",
+        "contributors": "{{ fromJSON(env.ADDITIONAL_CONTEXT).contributors }}"
+      },
+      "promptTemplate": "Generate release notes for version {{version}} (released on {{date}}) of the {{repoName}} project.\n\nHere are the commits that were included in this release:\n\n```json\n{{commits}}\n```\n\n{{#additionalContext}}\nAdditional context information:\n\n```json\n{{additionalContext}}\n```\n\nThis release includes contributions from:\n{{#contributors}}\n- {{name}}\n{{/contributors}}\n\n{{#pullRequests.length}}\nPull Requests merged in this release:\n{{#pullRequests}}\n- #{{number}}: {{title}} {{#labels}}[{{name}}] {{/labels}}\n{{/pullRequests}}\n{{/pullRequests.length}}\n\n{{#issues.length}}\nIssues addressed in this release:\n{{#issues}}\n- #{{number}}: {{title}} {{#labels}}[{{name}}] {{/labels}}\n{{/issues}}\n{{/issues.length}}\n{{/additionalContext}}\n\nIMPORTANT: Your response must contain ONLY the release notes in Markdown format, with no additional text, commentary, or explanations about your process. DO NOT include any phrases like \"Based on my analysis\" or \"Here are the release notes\".\n\nThe release notes should:\n\n1. Group changes by type (features, improvements, bug fixes, etc.)\n2. Translate technical commit messages into user-friendly descriptions\n3. Highlight important changes that users should be aware of\n4. Be concise but informative\n5. Use Markdown formatting with bold titles using ** for emphasis\n\nFocus on explaining what's new or changed from an end-user perspective, rather than implementation details. Omit commits that are purely technical (e.g., \"fix typo\", \"merge branch\", etc.) unless they fix important user-facing issues."
+    }],
+    "@semantic-release/npm",
+    ["@semantic-release/github", {
+      "assets": ["dist/*.js", "dist/*.js.map"]
+    }]
+  ]
+}

@@ -66,11 +66,45 @@ export async function generateNotes(
   });
   
   // Prepare the prompt for Claude
-  const prompt = promptTemplate
+  let prompt = promptTemplate
     .replace('{{version}}', releaseVersion)
     .replace('{{date}}', new Date().toISOString().split('T')[0])
     .replace('{{repoName}}', repoName)
     .replace('{{commits}}', JSON.stringify(commitData, null, 2));
+  
+  // Process additional context if provided
+  if (pluginConfig.additionalContext) {
+    // Add additional context if the template has the placeholder
+    if (prompt.includes('{{#additionalContext}}')) {
+      // Replace the whole conditional block
+      const contextString = JSON.stringify(pluginConfig.additionalContext, null, 2);
+      prompt = prompt.replace(
+        /{{#additionalContext}}[\s\S]*?{{additionalContext}}[\s\S]*?{{\/additionalContext}}/g, 
+        `Additional context information:\n\n\`\`\`json\n${contextString}\n\`\`\``
+      );
+    } else {
+      // If using a custom template without the conditional, try to find a good
+      // place to add the context (after commits but before instructions)
+      logger.log('Custom template without additionalContext placeholder, appending context');
+      const contextString = JSON.stringify(pluginConfig.additionalContext, null, 2);
+      const additionalContextBlock = `\nAdditional context information:\n\n\`\`\`json\n${contextString}\n\`\`\`\n`;
+      
+      // Try to insert after the commits block
+      if (prompt.includes('{{commits}}')) {
+        const commitBlockEnd = prompt.indexOf('```', prompt.indexOf('{{commits}}') + 10) + 3;
+        prompt = prompt.substring(0, commitBlockEnd) + additionalContextBlock + prompt.substring(commitBlockEnd);
+      } else {
+        // If we can't find a good place, just add it before any instructions
+        prompt = prompt.replace(
+          /IMPORTANT:/,
+          additionalContextBlock + 'IMPORTANT:'
+        );
+      }
+    }
+  } else {
+    // Remove the conditional block if no additional context is provided
+    prompt = prompt.replace(/{{#additionalContext}}[\s\S]*?{{\/additionalContext}}/g, '');
+  }
 
   logger.log('Generating release notes with Claude...');
   

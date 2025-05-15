@@ -37,4 +37,10 @@ export interface PluginConfig {
    * @default 100
    */
   maxCommits?: number;
+  
+  /**
+   * Additional context to include in the prompt (PRs, issues, etc.)
+   * This can be populated by GitHub Actions or other CI systems
+   */
+  additionalContext?: Record<string, any>;
 }
