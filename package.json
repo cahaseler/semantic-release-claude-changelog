@@ -22,7 +22,7 @@
     "claude-code"
   ],
   "author": "",
-  "license": "MIT",
+  "license": "CC0-1.0",
   "peerDependencies": {
     "semantic-release": ">=18.0.0"
   },
@@ -44,6 +44,7 @@
     "typescript": "^5.0.4"
   },
   "dependencies": {
-    "execa": "^5.1.1"
+    "execa": "^5.1.1",
+    "semantic-release-claude-changelog": "^1.2.2"
   }
 }
