@@ -193,4 +193,40 @@ describe('generateNotes', () => {
     expect(additionalContextIndex).toBeGreaterThan(0);
     expect(additionalContextIndex).toBeLessThan(importantIndex);
   });
+  
+  it('should handle custom template with no backticks or IMPORTANT marker', async () => {
+    const fs = require('fs');
+    // Minimal template with neither backticks nor IMPORTANT marker
+    const customTemplate = 'Custom template {{version}} with {{commits}}';
+    
+    // Call generateNotes with custom template and additionalContext
+    await generateNotes({ 
+      promptTemplate: customTemplate,
+      additionalContext: mockAdditionalContext 
+    }, mockContext);
+    
+    // Check that writeFileSync was called with content that includes the additional context
+    expect(fs.writeFileSync).toHaveBeenCalled();
+    const promptArg = fs.writeFileSync.mock.calls[0][1];
+    expect(promptArg).toContain('Custom template 1.0.0');
+    expect(promptArg).toContain('Additional context information');
+  });
+  
+  it('should handle template with nested additionalContext tags', async () => {
+    const fs = require('fs');
+    // Template with nested additionalContext tags (simulating invalid template)
+    const customTemplate = 'Custom template {{version}} {{#additionalContext}}outer{{#additionalContext}}inner{{/additionalContext}}{{/additionalContext}}';
+    
+    // Call generateNotes with custom template and additionalContext
+    await generateNotes({ 
+      promptTemplate: customTemplate,
+      additionalContext: mockAdditionalContext 
+    }, mockContext);
+    
+    // Check that writeFileSync was called with a reasonable result
+    expect(fs.writeFileSync).toHaveBeenCalled();
+    const promptArg = fs.writeFileSync.mock.calls[0][1];
+    expect(promptArg).toContain('Custom template 1.0.0');
+    expect(promptArg).toContain('Additional context information');
+  });
 });

@@ -110,6 +110,7 @@ export async function generateNotes(
             prompt = prompt.substring(0, commitBlockEnd) + additionalContextBlock + prompt.substring(commitBlockEnd);
           } else {
             // Fallback: just append to the end
+            logger.log('Could not find the end of the commits block. Appending additional context at the end.');
             prompt += additionalContextBlock;
           }
         }
@@ -117,9 +118,11 @@ export async function generateNotes(
         // If we can't find a good place, just add it before "IMPORTANT:" if it exists
         const importantPos = prompt.indexOf('IMPORTANT:');
         if (importantPos !== -1) {
+          logger.log('Using fallback placement: Adding additional context before instructions.');
           prompt = prompt.substring(0, importantPos) + additionalContextBlock + prompt.substring(importantPos);
         } else {
           // Otherwise, just append to the end
+          logger.log('Could not find suitable location for additional context. Appending to the end of the prompt.');
           prompt += additionalContextBlock;
         }
       }
