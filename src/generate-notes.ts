@@ -12,7 +12,8 @@ import execa from 'execa';
  */
 export function extractReleaseNotes(text: string, version: string): string {
   // First, try to find a header with the exact version number
-  const versionHeaderRegex = new RegExp(`^##\\s+${version.replace(/\./g, '\\.')}\\b`, 'm');
+  // Escape backslashes first, then dots to prevent security issues with incomplete string escaping
+  const versionHeaderRegex = new RegExp(`^##\\s+${version.replace(/\\/g, '\\\\').replace(/\./g, '\\.')}\\b`, 'm');
   const versionHeaderMatch = text.match(versionHeaderRegex);
   
   if (versionHeaderMatch && versionHeaderMatch.index !== undefined) {
@@ -61,7 +62,8 @@ export async function generateNotes(
   const {
     claudePath = 'claude',
     promptTemplate = DEFAULT_PROMPT_TEMPLATE,
-    maxCommits = 100
+    maxCommits = 100,
+    cleanOutput = true
   } = pluginConfig;
 
   // Get relevant commits between last and current release
@@ -295,12 +297,17 @@ export async function generateNotes(
     
     logger.log('Successfully generated release notes');
     
-    // Clean up the response to extract just the release notes section
-    // Look for a markdown header with the version number as the starting point
-    const cleanedResponse = extractReleaseNotes(responseText, context.nextRelease?.version || 'unknown');
-    logger.log('Cleaned release notes to remove any AI preamble');
-    
-    return cleanedResponse.trim();
+    // If cleanOutput is enabled, extract just the release notes section
+    if (cleanOutput) {
+      // Look for a markdown header with the version number as the starting point
+      const cleanedResponse = extractReleaseNotes(responseText, context.nextRelease?.version || 'unknown');
+      logger.log('Cleaned release notes to remove any AI preamble');
+      return cleanedResponse.trim();
+    } else {
+      // Return the raw output if cleaning is disabled
+      logger.log('Skipping output cleaning (disabled by configuration)');
+      return responseText.trim();
+    }
   } catch (error) {
     logger.error('Error generating release notes with Claude', error);
     return '## Release Notes\n\nNo release notes generated due to an error.';

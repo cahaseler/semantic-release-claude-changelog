@@ -1,8 +1,8 @@
-import { generateNotes } from '../generate-notes';
+import { generateNotes, extractReleaseNotes } from '../generate-notes';
 import { getCommits } from '../get-commits';
 
-// Import the extractReleaseNotes function for testing
-import { extractReleaseNotes } from '../generate-notes';
+// Import the full module for spying
+import * as GenerateNotesModule from '../generate-notes';
 
 // Mock dependencies
 jest.mock('../get-commits');
@@ -296,5 +296,119 @@ Just some random content without markdown headers.`;
     
     const result = extractReleaseNotes(input, version);
     expect(result).toBe(input);
+  });
+  
+  it('should handle version strings with special regex characters', () => {
+    // Test with a version containing backslashes
+    const specialVersion = '1.0.0\\beta';
+    const input = `Here's some preamble text.
+    
+## ${specialVersion} (2023-05-15)
+
+### Features
+- Feature 1`;
+    
+    const result = extractReleaseNotes(input, specialVersion);
+    expect(result).toBe(`## ${specialVersion} (2023-05-15)
+
+### Features
+- Feature 1`);
+  });
+});
+
+describe('cleanOutput option', () => {
+  const mockContext: any = {
+    logger: {
+      log: jest.fn(),
+      error: jest.fn()
+    },
+    nextRelease: {
+      version: '1.0.0'
+    },
+    options: {
+      repositoryUrl: 'https://github.com/user/repo.git'
+    }
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (getCommits as jest.Mock).mockResolvedValue([{
+      message: 'feat: add new feature',
+      hash: 'abc1234',
+      committer: { name: 'Developer 1' },
+      committerDate: '2023-01-01'
+    }]);
+  });
+
+  it('should use cleanOutput by default', async () => {
+    // Setup mock execa with response containing preamble
+    const execa = require('execa').default;
+    const preambleContent = `Now I'll analyze these commits and generate release notes.
+              
+## 1.0.0 (2023-05-15)
+
+### Features
+- Added new feature X`;
+    
+    execa.mockImplementationOnce(() => {
+      const stdout = {
+        on: jest.fn().mockImplementation((event, cb) => {
+          if (event === 'data') {
+            cb(JSON.stringify({ role: 'system', result: preambleContent }));
+          }
+          return stdout;
+        })
+      };
+      
+      return {
+        stdout,
+        then: (cb) => Promise.resolve().then(() => cb())
+      };
+    });
+
+    // Run with default options
+    const result = await generateNotes({}, mockContext);
+    
+    // Verify the log messages that indicate the cleaning happened
+    expect(mockContext.logger.log).toHaveBeenCalledWith('Cleaned release notes to remove any AI preamble');
+    
+    // Check the result doesn't have the preamble
+    expect(result).not.toContain("Now I'll analyze");
+  });
+
+  it('should skip cleaning when cleanOutput is false', async () => {
+    // Setup mock execa with response containing preamble
+    const execa = require('execa').default;
+    const preambleContent = `Now I'll analyze these commits and generate release notes.
+              
+## 1.0.0 (2023-05-15)
+
+### Features
+- Added new feature X`;
+    
+    execa.mockImplementationOnce(() => {
+      const stdout = {
+        on: jest.fn().mockImplementation((event, cb) => {
+          if (event === 'data') {
+            cb(JSON.stringify({ role: 'system', result: preambleContent }));
+          }
+          return stdout;
+        })
+      };
+      
+      return {
+        stdout,
+        then: (cb) => Promise.resolve().then(() => cb())
+      };
+    });
+
+    // Run with cleanOutput = false
+    const result = await generateNotes({ cleanOutput: false }, mockContext);
+    
+    // Verify the log messages that indicate cleaning was skipped
+    expect(mockContext.logger.log).toHaveBeenCalledWith('Skipping output cleaning (disabled by configuration)');
+    
+    // The result should contain the preamble text since we didn't clean it
+    expect(result).toContain("Now I'll analyze");
   });
 });
