@@ -1,0 +1,137 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 'lts/*'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      # Get PR and issue information related to the release
+      - name: Get PR and issue context
+        id: context
+        run: |
+          # Get the PR numbers associated with the commits in this release
+          # Look for both PR numbers (#123) in the subject line and PR references in merge commits (Merge pull request #123)
+          echo "Collecting PR and issue information for changelog..."
+          
+          # Find the last tag or use the last 10 commits if no tags exist
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo HEAD~10)
+          echo "Using commits since: $LAST_TAG"
+          
+          # Extract PR numbers from commit messages in 3 ways:
+          # 1. From subject lines that reference PR numbers directly (#123)
+          # 2. From merge commits (Merge pull request #123)
+          # 3. From common PR reference patterns (PR: #123, pull-request: #123, etc.)
+          PR_NUMBERS=$(git log $LAST_TAG..HEAD --format="%s %b" | 
+                        grep -o -E "(#[0-9]+|[Pp][Rr][: ][#]?[0-9]+|pull[ -][Rr]equest[ :][#]?[0-9]+|[Mm]erge pull request #[0-9]+)" | 
+                        grep -o "[0-9]\+" | sort -u | tr '\n' ' ')
+          
+          echo "Found PR numbers: $PR_NUMBERS"
+          
+          # Initialize the context object
+          echo "CONTEXT={\"pullRequests\":[], \"repository\":\"$GITHUB_REPOSITORY\"}" > context.json
+          
+          # Loop through each PR number and collect information
+          for PR_NUMBER in $PR_NUMBERS; do
+            if [ -n "$PR_NUMBER" ]; then
+              echo "Getting info for PR #$PR_NUMBER"
+              # Get PR information using GitHub CLI
+              # Include additional fields like labels, author, merged_at for richer context
+              gh pr view $PR_NUMBER --json number,title,url,labels,author,body,baseRefName,headRefName,mergedAt > pr.json
+              
+              # Append to the context object
+              jq --argjson pr "$(cat pr.json)" '.pullRequests += [$pr]' context.json > temp.json && mv temp.json context.json
+            fi
+          done
+          
+          # Get linked issues (look for various forms of issue references)
+          # Common patterns include: Closes #123, Fixes #123, Resolves #123, Addresses #123
+          ISSUE_NUMBERS=$(git log $LAST_TAG..HEAD --format="%s %b" | 
+                           grep -o -E "(([Cc]loses|[Ff]ixes|[Rr]esolves|[Aa]ddresses|[Ii]ssue|[Rr]ef)[: ]?#[0-9]+)" | 
+                           grep -o "#[0-9]\+" | sort -u | sed 's/#//g' | tr '\n' ' ')
+          
+          echo "Found issue numbers: $ISSUE_NUMBERS"
+          
+          # Update the context object with issues array
+          jq '.issues = []' context.json > temp.json && mv temp.json context.json
+          
+          # Loop through each issue number and collect information
+          for ISSUE_NUMBER in $ISSUE_NUMBERS; do
+            if [ -n "$ISSUE_NUMBER" ]; then
+              echo "Getting info for issue #$ISSUE_NUMBER"
+              # Get issue information using GitHub CLI
+              # Include additional fields like labels, author, state for richer context
+              gh issue view $ISSUE_NUMBER --json number,title,url,labels,author,body,state,createdAt > issue.json
+              
+              # Append to the context object
+              jq --argjson issue "$(cat issue.json)" '.issues += [$issue]' context.json > temp.json && mv temp.json context.json
+            fi
+          done
+          
+          # Add contributor information
+          echo "Collecting contributor information..."
+          git log $LAST_TAG..HEAD --format="%an|%ae" | sort -u > contributors.txt
+          jq '.contributors = []' context.json > temp.json && mv temp.json context.json
+          
+          while IFS="|" read -r name email; do
+            if [ -n "$name" ]; then
+              # Create contributor JSON object
+              echo "{\"name\":\"$name\",\"email\":\"$email\"}" > contributor.json
+              
+              # Append to the context object
+              jq --argjson contributor "$(cat contributor.json)" '.contributors += [$contributor]' context.json > temp.json && mv temp.json context.json
+            fi
+          done < contributors.txt
+          
+          # Save the context to a variable that semantic-release can use
+          echo "release_context=$(cat context.json | jq -c .)" >> $GITHUB_OUTPUT
+          echo "Context data prepared for changelog generation"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Pass the additional context to semantic-release
+          ADDITIONAL_CONTEXT: ${{ steps.context.outputs.release_context }}
+        run: npx semantic-release
+
+# This workflow requires a .releaserc.json file with the following configuration:
+# {
+#   "branches": ["main"],
+#   "plugins": [
+#     "@semantic-release/commit-analyzer",
+#     ["semantic-release-claude-changelog", {
+#       "additionalContext": {
+#         "pullRequests": {{ fromJSON(env.ADDITIONAL_CONTEXT).pullRequests }},
+#         "issues": {{ fromJSON(env.ADDITIONAL_CONTEXT).issues }}
+#       }
+#     }],
+#     "@semantic-release/npm",
+#     ["@semantic-release/github", {
+#       "assets": ["dist/*.js", "dist/*.js.map"]
+#     }]
+#   ]
+# }

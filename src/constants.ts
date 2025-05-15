@@ -10,6 +10,14 @@ Here are the commits that were included in this release:
 {{commits}}
 \`\`\`
 
+{{#additionalContext}}
+Additional context information:
+
+\`\`\`json
+{{additionalContext}}
+\`\`\`
+{{/additionalContext}}
+
 IMPORTANT: Your response must contain ONLY the release notes in Markdown format, with no additional text, commentary, or explanations about your process. DO NOT include any phrases like "Based on my analysis" or "Here are the release notes".
 
 The release notes should:
