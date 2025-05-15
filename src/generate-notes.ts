@@ -76,12 +76,23 @@ export async function generateNotes(
   if (pluginConfig.additionalContext) {
     // Add additional context if the template has the placeholder
     if (prompt.includes('{{#additionalContext}}')) {
-      // Replace the whole conditional block
+      // Replace the whole conditional block in a more controlled way
       const contextString = JSON.stringify(pluginConfig.additionalContext, null, 2);
-      prompt = prompt.replace(
-        /{{#additionalContext}}[\s\S]*?{{additionalContext}}[\s\S]*?{{\/additionalContext}}/g, 
-        `Additional context information:\n\n\`\`\`json\n${contextString}\n\`\`\``
-      );
+      
+      // Find the start of the conditional block
+      const blockStart = prompt.indexOf('{{#additionalContext}}');
+      if (blockStart !== -1) {
+        // Find the end of the conditional block
+        const blockEnd = prompt.indexOf('{{/additionalContext}}', blockStart);
+        if (blockEnd !== -1) {
+          // Replace just this specific block (avoiding regex with potential backtracking issues)
+          const beforeBlock = prompt.substring(0, blockStart);
+          const afterBlock = prompt.substring(blockEnd + '{{/additionalContext}}'.length);
+          prompt = beforeBlock + 
+                  `Additional context information:\n\n\`\`\`json\n${contextString}\n\`\`\`` + 
+                  afterBlock;
+        }
+      }
     } else {
       // If using a custom template without the conditional, try to find a good
       // place to add the context (after commits but before instructions)
@@ -91,19 +102,58 @@ export async function generateNotes(
       
       // Try to insert after the commits block
       if (prompt.includes('{{commits}}')) {
-        const commitBlockEnd = prompt.indexOf('```', prompt.indexOf('{{commits}}') + 10) + 3;
-        prompt = prompt.substring(0, commitBlockEnd) + additionalContextBlock + prompt.substring(commitBlockEnd);
+        const commitsPos = prompt.indexOf('{{commits}}');
+        if (commitsPos !== -1) {
+          const backticksPos = prompt.indexOf('```', commitsPos + 10);
+          if (backticksPos !== -1) {
+            const commitBlockEnd = backticksPos + 3;
+            prompt = prompt.substring(0, commitBlockEnd) + additionalContextBlock + prompt.substring(commitBlockEnd);
+          } else {
+            // Fallback: just append to the end
+            prompt += additionalContextBlock;
+          }
+        }
       } else {
-        // If we can't find a good place, just add it before any instructions
-        prompt = prompt.replace(
-          /IMPORTANT:/,
-          additionalContextBlock + 'IMPORTANT:'
-        );
+        // If we can't find a good place, just add it before "IMPORTANT:" if it exists
+        const importantPos = prompt.indexOf('IMPORTANT:');
+        if (importantPos !== -1) {
+          prompt = prompt.substring(0, importantPos) + additionalContextBlock + prompt.substring(importantPos);
+        } else {
+          // Otherwise, just append to the end
+          prompt += additionalContextBlock;
+        }
       }
     }
   } else {
     // Remove the conditional block if no additional context is provided
-    prompt = prompt.replace(/{{#additionalContext}}[\s\S]*?{{\/additionalContext}}/g, '');
+    // Do this without using regex with potential backtracking issues
+    let result = "";
+    let currentPos = 0;
+    
+    while (true) {
+      const blockStart = prompt.indexOf('{{#additionalContext}}', currentPos);
+      if (blockStart === -1) {
+        // No more blocks found, add the rest of the prompt
+        result += prompt.substring(currentPos);
+        break;
+      }
+      
+      // Add the part before the block
+      result += prompt.substring(currentPos, blockStart);
+      
+      // Find the end of this block
+      const blockEnd = prompt.indexOf('{{/additionalContext}}', blockStart);
+      if (blockEnd === -1) {
+        // No matching end tag, just keep the rest as is
+        result += prompt.substring(blockStart);
+        break;
+      }
+      
+      // Skip this block and continue from after it
+      currentPos = blockEnd + '{{/additionalContext}}'.length;
+    }
+    
+    prompt = result;
   }
 
   logger.log('Generating release notes with Claude...');
