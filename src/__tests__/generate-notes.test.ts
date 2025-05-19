@@ -258,7 +258,6 @@ describe('generateNotes', () => {
     const notes = await generateNotes({ cleanOutput: false }, mockContext);
     expect(notes).toBe('## Release Notes\n\nFinal');
   });
-
   it('should use fallback message when no valid JSON is parsed', async () => {
     const execa = require('execa').default;
 
