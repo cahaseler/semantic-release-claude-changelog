@@ -1,269 +1,480 @@
-import { generateNotes, extractReleaseNotes } from '../generate-notes';
-import { getCommits } from '../get-commits';
-
-// Import the full module for spying
-import * as GenerateNotesModule from '../generate-notes';
+import { generateNotes, extractReleaseNotes } from "../generate-notes";
+import { getCommits } from "../get-commits";
+import fs from "fs";
+import execa, { Options, ExecaChildProcess, ExecaReturnValue } from "execa";
+import { Readable } from "stream";
+import { ChildProcess } from "child_process";
 
 // Mock dependencies
-jest.mock('../get-commits');
-jest.mock('fs', () => ({
+jest.mock("../get-commits");
+jest.mock("fs", () => ({
+  ...jest.requireActual("fs"),
   writeFileSync: jest.fn(),
-  unlinkSync: jest.fn()
+  unlinkSync: jest.fn(),
 }));
-jest.mock('os', () => ({
-  tmpdir: jest.fn().mockReturnValue('/tmp')
+jest.mock("os", () => ({
+  tmpdir: jest.fn().mockReturnValue("/tmp"),
 }));
-jest.mock('path', () => ({
-  join: jest.fn().mockImplementation((...args) => args.join('/'))
+jest.mock("path", () => ({
+  join: jest.fn().mockImplementation((...args: string[]) => args.join("/")),
 }));
 
-// Mock execa with simple implementation
-jest.mock('execa', () => {
-  const mockFn = jest.fn();
-  mockFn.mockImplementation((cmd, args, opts) => {
-    // Store the arguments for later inspection in tests
-    mockFn.mockArgs = { cmd, args, opts };
-    
-    const stdout = {
-      on: jest.fn().mockImplementation((event, cb) => {
-        if (event === 'data') {
-          cb(JSON.stringify({ role: 'system', result: '## Release Notes\n\nGreat release!' }));
-        }
-        return stdout; // Return for chaining
-      })
-    };
-    
-    const mockProcess = {
-      stdout,
-      then: (cb) => Promise.resolve().then(() => cb())
-    };
-    
-    return mockProcess;
-  });
-  
-  // Expose arguments for verification in tests
-  mockFn.mockArgs = {};
-  
-  return { __esModule: true, default: mockFn };
-});
+jest.mock("execa", () => jest.fn());
 
-describe('generateNotes', () => {
-  const mockContext: any = {
-    logger: {
-      log: jest.fn(),
-      error: jest.fn()
-    },
-    nextRelease: {
-      version: '1.0.0'
-    },
-    options: {
-      repositoryUrl: 'https://github.com/user/repo.git'
+type CustomMockedExecaType = jest.MockedFunction<typeof execa> & {
+  mockArgs?: {
+    cmd: string;
+    args?: readonly string[];
+    opts?: Options | Options<null>;
+  }; // Allow Options<null> for opts in mockArgs
+};
+
+const mockedExeca = execa as CustomMockedExecaType;
+
+const createMockProcess = (
+  stdoutContent: string | Buffer,
+  exitCode = 0
+): ExecaChildProcess<Buffer> => {
+  const stdoutBuffer = Buffer.isBuffer(stdoutContent)
+    ? stdoutContent
+    : Buffer.from(stdoutContent);
+
+  class MockReadable extends Readable {
+    private content: Buffer;
+    private delivered = false;
+    constructor(content: Buffer, options?: import("stream").ReadableOptions) {
+      super(options);
+      this.content = content;
     }
+    _read(_size: number) {
+      if (!this.delivered) {
+        this.push(this.content);
+        this.delivered = true;
+      }
+      this.push(null);
+    }
+  }
+
+  const stdoutStream = new MockReadable(stdoutBuffer);
+  const stderrStream = new MockReadable(Buffer.from(""));
+
+  const childProcessProperties: Partial<ChildProcess> = {
+    stdout: stdoutStream as any,
+    stderr: stderrStream as any,
+    stdin: null,
+    pid: 12345,
+    connected: false,
+    exitCode: exitCode,
+    signalCode: null,
+    killed: false,
+    spawnargs: [],
+    spawnfile: "",
+    stdio: [null, stdoutStream, stderrStream, null, null] as any,
+    kill: jest.fn(),
+    disconnect: jest.fn(),
+    ref: jest.fn(),
+    unref: jest.fn(),
+    send: jest.fn(),
+    addListener: jest.fn(),
+    emit: jest.fn(),
+    eventNames: jest.fn(),
+    getMaxListeners: jest.fn(),
+    listenerCount: jest.fn(),
+    listeners: jest.fn(),
+    off: jest.fn(),
+    on: jest
+      .fn()
+      .mockImplementation((event: string, cb: (...args: any[]) => void) => {
+        if (event === "end" || event === "close" || event === "exit") {
+          // Ensure promise resolves on stream/process end
+          Promise.resolve().then(() => {
+            if (event === "close" || event === "exit") cb(exitCode, null);
+            else cb(); // For 'end'
+          });
+        }
+        return childProcessProperties as any;
+      }),
+    once: jest.fn(),
+    prependListener: jest.fn(),
+    prependOnceListener: jest.fn(),
+    rawListeners: jest.fn(),
+    removeAllListeners: jest.fn(),
+    removeListener: jest.fn(),
+    setMaxListeners: jest.fn(),
+    [Symbol.dispose]: jest.fn(),
+  };
+
+  // This promise should resolve when the stream ends or the process closes.
+  const promisePart = new Promise<ExecaReturnValue<Buffer>>(
+    (resolve, reject) => {
+      const returnValue: ExecaReturnValue<Buffer> = {
+        command: "mockCmd",
+        escapedCommand: "mockCmd",
+        exitCode: exitCode,
+        stdout: stdoutBuffer,
+        stderr: Buffer.from(""),
+        all: stdoutBuffer,
+        failed: exitCode !== 0,
+        timedOut: false,
+        isCanceled: false,
+        isTerminated: false,
+        killed: false,
+        originalMessage: "",
+        shortMessage: "",
+        signal: undefined,
+        signalDescription: undefined,
+        stdio: [stdoutBuffer, Buffer.from("")],
+      };
+
+      let streamEnded = false;
+      let processClosed = false;
+
+      const tryResolve = () => {
+        // Ensure both stream has ended (implicitly via _read pushing null)
+        // and process has 'closed' before resolving the main promise.
+        // For simplicity in mock, we might tie it more directly to 'end' or 'close' of the stream part.
+        if (streamEnded && processClosed) {
+          // Or just one of them if sufficient
+          resolve(returnValue);
+        }
+      };
+
+      // Simulate stream 'end' more reliably for the promise
+      (childProcessProperties.stdout as MockReadable).on("end", () => {
+        streamEnded = true;
+        tryResolve();
+      });
+      (childProcessProperties.stderr as MockReadable).on("end", () => {
+        // Handle stderr end if necessary
+      });
+
+      // Simulate process 'close' for the promise
+      (childProcessProperties as ChildProcess).on("close", () => {
+        // Use the 'on' we defined
+        processClosed = true;
+        tryResolve();
+      });
+      (childProcessProperties as ChildProcess).on("exit", () => {
+        // Also listen to exit
+        processClosed = true; // Consider exit as a form of close for promise resolution
+        tryResolve();
+      });
+
+      // Fallback: If the stream is simple and synchronous, resolve quickly.
+      // This is tricky; real execa handles this internally.
+      // Forcing a resolve for the test if 'end' isn't hit quickly enough by the mock.
+      // This might be needed if the 'data' event in generateNotes is the only thing driving it.
+      // However, the MockReadable should emit 'end' after pushing its content.
+      if (
+        stdoutBuffer.length === 0 ||
+        (stdoutStream as MockReadable)["_readableState"]?.ended
+      ) {
+        streamEnded = true; // Assume ended if empty or state says so
+      }
+      // If we assume the process 'close' event on the mock is reliable:
+      // (childProcessProperties as ChildProcess).on('close', () => resolve(returnValue));
+      // For now, let's make the promise resolve after a short delay to allow 'data' events to fire.
+      // This is a common workaround for testing streams when exact timing is hard to mock.
+      // setTimeout(() => resolve(returnValue), 0);
+      // A better way: the 'on' handler for 'close'/'exit' on childProcessProperties should trigger resolve.
+      // The 'end' event on the stream itself is also key.
+      // Let's ensure the 'on' mock for 'close'/'exit' on childProcessProperties resolves the promise.
+      const originalOn = childProcessProperties.on;
+      childProcessProperties.on = jest
+        .fn()
+        .mockImplementation((event: string, cb: (...args: any[]) => void) => {
+          if (event === "close" || event === "exit") {
+            Promise.resolve().then(() => {
+              cb(exitCode, null);
+              resolve(returnValue); // Resolve the main promise here
+            });
+          } else if (
+            event === "data" &&
+            stdoutStream === childProcessProperties.stdout
+          ) {
+            // cb will be called by MockReadable's push if listener is attached
+          } else if (
+            event === "end" &&
+            stdoutStream === childProcessProperties.stdout
+          ) {
+            Promise.resolve().then(() => {
+              cb();
+              // streamEnded = true; // Redundant if close/exit resolves
+              // tryResolve();
+            });
+          }
+          return childProcessProperties as any;
+        });
+      // If no 'close' or 'exit' listener is attached by the code under test, this promise might not resolve.
+      // Execa's promise *does* resolve. So, we need to ensure this mock's promise resolves.
+      // Forcing resolution for the sake of the mock if not otherwise triggered by 'close' or 'exit' being listened to.
+      // This is a common challenge in deeply mocking execa.
+      // A simple approach for the mock: resolve after a tick to allow data events.
+      if (!returnValue.failed) {
+        // Only auto-resolve if not a failed exit code
+        setTimeout(() => resolve(returnValue), 0);
+      } else {
+        setTimeout(
+          () => reject(new Error(`Mock process exited with code ${exitCode}`)),
+          0
+        );
+      }
+    }
+  );
+
+  const execaChildProcessMock = Object.assign(
+    Object.create(Promise.prototype),
+    childProcessProperties,
+    {
+      then: promisePart.then.bind(promisePart),
+      catch: promisePart.catch.bind(promisePart),
+      finally: promisePart.finally.bind(promisePart),
+    }
+  );
+
+  return execaChildProcessMock as ExecaChildProcess<Buffer>;
+};
+
+const setDefaultExecaImplementation = () => {
+  mockedExeca.mockImplementation(
+    (
+      cmd: string,
+      arg1?: readonly string[] | Options | Options<null>,
+      arg2?: Options | Options<null>
+    ): ExecaChildProcess<Buffer> => {
+      let execArgs: readonly string[] | undefined;
+      let execOpts: Options | Options<null> | undefined;
+
+      if (Array.isArray(arg1)) {
+        execArgs = arg1;
+        execOpts = arg2;
+      } else {
+        execArgs = undefined;
+        execOpts = arg1 as Options | Options<null> | undefined;
+      }
+
+      mockedExeca.mockArgs = { cmd, args: execArgs, opts: execOpts as Options };
+
+      const defaultResult = Buffer.from(
+        JSON.stringify({
+          type: "result",
+          subtype: "success",
+          result: "## Release Notes\n\nGreat release!",
+          session_id: "mock-session-id",
+          is_error: false,
+        })
+      );
+      return createMockProcess(defaultResult);
+    }
+  );
+  mockedExeca.mockArgs = { cmd: "", args: [], opts: {} };
+};
+
+setDefaultExecaImplementation();
+
+describe("generateNotes", () => {
+  const mockContext: any = {
+    logger: { log: jest.fn(), error: jest.fn() },
+    nextRelease: { version: "1.0.0" },
+    options: { repositoryUrl: "https://github.com/user/repo.git" },
   };
 
   const mockCommits = [
     {
-      message: 'feat: add new feature',
-      hash: 'abc1234',
-      committer: { name: 'Developer 1' },
-      committerDate: '2023-01-01'
-    }
+      message: "feat: add new feature",
+      hash: "abc1234",
+      committer: { name: "Developer 1" },
+      committerDate: "2023-01-01",
+    },
   ];
-  
+
   const mockAdditionalContext = {
     pullRequests: [
-      { number: 123, title: 'Add new feature', url: 'https://github.com/user/repo/pull/123' }
+      {
+        number: 123,
+        title: "Add new feature",
+        url: "https://github.com/user/repo/pull/123",
+      },
     ],
     issues: [
-      { number: 456, title: 'Bug in feature', url: 'https://github.com/user/repo/issues/456' }
-    ]
+      {
+        number: 456,
+        title: "Bug in feature",
+        url: "https://github.com/user/repo/issues/456",
+      },
+    ],
   };
 
   beforeEach(() => {
     jest.clearAllMocks();
     (getCommits as jest.Mock).mockResolvedValue(mockCommits);
-    
-    // Reset execa mock args
-    const execa = require('execa').default;
-    execa.mockArgs = {};
+    setDefaultExecaImplementation();
   });
 
-  it('should return empty string when no commits are found', async () => {
+  it("should return empty string when no commits are found", async () => {
     (getCommits as jest.Mock).mockResolvedValue([]);
-    
     const notes = await generateNotes({}, mockContext);
-    
-    expect(notes).toBe('');
-    expect(mockContext.logger.log).toHaveBeenCalledWith('No commits found, using empty release notes');
+    expect(notes).toBe("");
+    expect(mockContext.logger.log).toHaveBeenCalledWith(
+      "No commits found, using empty release notes"
+    );
   });
-  
-  it('should generate release notes with Claude', async () => {
-    const notes = await generateNotes({}, mockContext);
-    
-    // Verify commits were retrieved
+
+  it("should generate release notes with Claude", async () => {
+    const _notes = await generateNotes({}, mockContext);
     expect(getCommits).toHaveBeenCalledWith(mockContext, 100);
-    
-    // Verify Claude CLI was called
-    const execa = require('execa').default;
-    expect(execa).toHaveBeenCalled();
+    expect(mockedExeca).toHaveBeenCalled();
   });
-  
-  it('should handle Claude CLI errors', async () => {
-    const execa = require('execa').default;
-    
-    // Mock execa to throw an error for this test only
-    execa.mockImplementationOnce(() => {
-      throw new Error('Claude CLI error');
+
+  it("should handle Claude CLI errors", async () => {
+    mockedExeca.mockImplementationOnce(() => {
+      throw new Error("Claude CLI error");
     });
-    
     const notes = await generateNotes({}, mockContext);
-    
-    expect(notes).toBe('## Release Notes\n\nNo release notes generated due to an error.');
-    expect(mockContext.logger.error).toHaveBeenCalledWith('Error generating release notes with Claude', expect.any(Error));
+    expect(notes).toBe(
+      "## Release Notes\n\nNo release notes generated due to an error."
+    );
+    expect(mockContext.logger.error).toHaveBeenCalledWith(
+      "Error generating release notes with Claude",
+      expect.any(Error)
+    );
   });
-  
-  it('should include additional context in the prompt when provided', async () => {
-    const fs = require('fs');
-    
-    // Call generateNotes with additionalContext
-    await generateNotes({ 
-      additionalContext: mockAdditionalContext 
-    }, mockContext);
-    
-    // Check that writeFileSync was called with content that includes the additional context
+
+  it("should include additional context in the prompt when provided", async () => {
+    await generateNotes(
+      { additionalContext: mockAdditionalContext },
+      mockContext
+    );
     expect(fs.writeFileSync).toHaveBeenCalled();
-    const promptArg = fs.writeFileSync.mock.calls[0][1];
-    expect(promptArg).toContain('Additional context information');
+    const promptArg = (fs.writeFileSync as jest.Mock).mock.calls[0][1];
+    expect(promptArg).toContain("Additional context information");
     expect(promptArg).toContain(JSON.stringify(mockAdditionalContext, null, 2));
   });
-  
-  it('should not include additional context section when not provided', async () => {
-    const fs = require('fs');
-    
-    // Call generateNotes without additionalContext
+
+  it("should not include additional context section when not provided", async () => {
     await generateNotes({}, mockContext);
-    
-    // Check that writeFileSync was called with content that does not include additional context
     expect(fs.writeFileSync).toHaveBeenCalled();
-    const promptArg = fs.writeFileSync.mock.calls[0][1];
-    expect(promptArg).not.toContain('Additional context information');
+    const promptArg = (fs.writeFileSync as jest.Mock).mock.calls[0][1];
+    expect(promptArg).not.toContain("Additional context information");
   });
-  
-  it('should work with custom template and additionalContext', async () => {
-    const fs = require('fs');
-    // Update the test to match how our template substitution actually works
-    const customTemplate = 'Custom template {{version}} with {{#additionalContext}}Additional context{{/additionalContext}}';
-    
-    // Call generateNotes with custom template and additionalContext
-    await generateNotes({ 
-      promptTemplate: customTemplate,
-      additionalContext: mockAdditionalContext 
-    }, mockContext);
-    
-    // Check that writeFileSync was called with content that includes the additional context
+
+  it("should work with custom template and additionalContext", async () => {
+    const customTemplate =
+      "Custom template {{version}} with {{#additionalContext}}Additional context{{/additionalContext}}";
+    await generateNotes(
+      {
+        promptTemplate: customTemplate,
+        additionalContext: mockAdditionalContext,
+      },
+      mockContext
+    );
     expect(fs.writeFileSync).toHaveBeenCalled();
-    const promptArg = fs.writeFileSync.mock.calls[0][1];
-    expect(promptArg).toContain('Custom template 1.0.0');
-    expect(promptArg).toContain('Additional context');
-    expect(promptArg).not.toContain('{{additionalContext}}'); // Placeholder should be replaced
+    const promptArg = (fs.writeFileSync as jest.Mock).mock.calls[0][1];
+    expect(promptArg).toContain("Custom template 1.0.0");
+    expect(promptArg).toContain("Additional context");
+    expect(promptArg).not.toContain("{{additionalContext}}");
   });
-  
-  it('should handle custom template without conditional blocks', async () => {
-    const fs = require('fs');
-    // Custom template without the {{#additionalContext}} conditional
-    const customTemplate = 'Custom template {{version}} with {{commits}} IMPORTANT: instructions';
-    
-    // Call generateNotes with custom template and additionalContext
-    await generateNotes({ 
-      promptTemplate: customTemplate,
-      additionalContext: mockAdditionalContext 
-    }, mockContext);
-    
-    // Check that writeFileSync was called with content that includes the additional context
+
+  it("should handle custom template without conditional blocks", async () => {
+    const customTemplate =
+      "Custom template {{version}} with {{commits}} IMPORTANT: instructions";
+    await generateNotes(
+      {
+        promptTemplate: customTemplate,
+        additionalContext: mockAdditionalContext,
+      },
+      mockContext
+    );
     expect(fs.writeFileSync).toHaveBeenCalled();
-    const promptArg = fs.writeFileSync.mock.calls[0][1];
-    expect(promptArg).toContain('Custom template 1.0.0');
-    expect(promptArg).toContain('Additional context information');
-    expect(promptArg).toContain('IMPORTANT:'); // Should still have instructions
-    // The additional context should be after commits but before IMPORTANT
-    // In mock data, we need to account for the fact that the commits are replaced
-    const commitBlockEnd = promptArg.indexOf('```', promptArg.indexOf('with'));
-    const importantIndex = promptArg.indexOf('IMPORTANT:');
-    const additionalContextIndex = promptArg.indexOf('Additional context information');
+    const promptArg = (fs.writeFileSync as jest.Mock).mock
+      .calls[0][1] as string;
+    expect(promptArg).toContain("Custom template 1.0.0");
+    expect(promptArg).toContain("IMPORTANT:");
+    const commitBlockEnd = promptArg.indexOf("```", promptArg.indexOf("with"));
+    const importantIndex = promptArg.indexOf("IMPORTANT:");
+    const additionalContextIndex = promptArg.indexOf(
+      "Additional context information"
+    );
     expect(commitBlockEnd).not.toBe(-1);
     expect(importantIndex).not.toBe(-1);
     expect(additionalContextIndex).not.toBe(-1);
     expect(additionalContextIndex).toBeGreaterThan(0);
     expect(additionalContextIndex).toBeLessThan(importantIndex);
   });
-  
-  it('should handle custom template with no backticks or IMPORTANT marker', async () => {
-    const fs = require('fs');
-    // Minimal template with neither backticks nor IMPORTANT marker
-    const customTemplate = 'Custom template {{version}} with {{commits}}';
-    
-    // Call generateNotes with custom template and additionalContext
-    await generateNotes({ 
-      promptTemplate: customTemplate,
-      additionalContext: mockAdditionalContext 
-    }, mockContext);
-    
-    // Check that writeFileSync was called with content that includes the additional context
+
+  it("should handle custom template with no backticks or IMPORTANT marker", async () => {
+    const customTemplate = "Custom template {{version}} with {{commits}}";
+    await generateNotes(
+      {
+        promptTemplate: customTemplate,
+        additionalContext: mockAdditionalContext,
+      },
+      mockContext
+    );
     expect(fs.writeFileSync).toHaveBeenCalled();
-    const promptArg = fs.writeFileSync.mock.calls[0][1];
-    expect(promptArg).toContain('Custom template 1.0.0');
-    expect(promptArg).toContain('Additional context information');
-  });
-  
-  it('should handle template with nested additionalContext tags', async () => {
-    const fs = require('fs');
-    // Template with nested additionalContext tags (simulating invalid template)
-    const customTemplate = 'Custom template {{version}} {{#additionalContext}}outer{{#additionalContext}}inner{{/additionalContext}}{{/additionalContext}}';
-    
-    // Call generateNotes with custom template and additionalContext
-    await generateNotes({ 
-      promptTemplate: customTemplate,
-      additionalContext: mockAdditionalContext 
-    }, mockContext);
-    
-    // Check that writeFileSync was called with a reasonable result
-    expect(fs.writeFileSync).toHaveBeenCalled();
-    const promptArg = fs.writeFileSync.mock.calls[0][1];
-    expect(promptArg).toContain('Custom template 1.0.0');
-    expect(promptArg).toContain('Additional context information');
+    const promptArg = (fs.writeFileSync as jest.Mock).mock.calls[0][1];
+    expect(promptArg).toContain("Custom template 1.0.0");
+    expect(promptArg).toContain("Additional context information");
   });
 
-  it('should use the last valid JSON message when output contains invalid lines', async () => {
-    const execa = require('execa').default;
+  it("should handle template with nested additionalContext tags", async () => {
+    const customTemplate =
+      "Custom template {{version}} {{#additionalContext}}outer{{#additionalContext}}inner{{/additionalContext}}{{/additionalContext}}";
+    await generateNotes(
+      {
+        promptTemplate: customTemplate,
+        additionalContext: mockAdditionalContext,
+      },
+      mockContext
+    );
+    expect(fs.writeFileSync).toHaveBeenCalled();
+    const promptArg = (fs.writeFileSync as jest.Mock).mock.calls[0][1];
+    expect(promptArg).toContain("Custom template 1.0.0");
+    expect(promptArg).toContain("Additional context information");
+  });
 
-    execa.mockImplementationOnce(() => {
-      const stdout = {
-        on: jest.fn().mockImplementation((event, cb) => {
-          if (event === 'data') {
-            cb('not-json\n');
-            cb(JSON.stringify({ role: 'assistant', type: 'message', content: 'First' }) + '\n');
-            cb('broken {\n');
-            cb(JSON.stringify({ role: 'system', result: '## Release Notes\n\nFinal' }) + '\n');
-          }
-          return stdout;
-        })
-      };
-
-      return {
-        stdout,
-        then: (cb) => Promise.resolve().then(() => cb())
-      };
+  it("should use the last valid JSON message when output contains invalid lines", async () => {
+    mockedExeca.mockImplementationOnce((): ExecaChildProcess<Buffer> => {
+      const multiLineOutput =
+        "not-json\n" +
+        JSON.stringify({
+          type: "assistant",
+          message: {
+            id: "msg1",
+            type: "message",
+            role: "assistant",
+            model: "claude-mock",
+            content: [{ type: "text", text: "First assistant message." }],
+            stop_reason: "tool_use",
+            stop_sequence: null,
+            usage: { input_tokens: 1, output_tokens: 1 },
+          },
+          session_id: "test-session",
+        }) +
+        "\n" +
+        "broken {\n" +
+        JSON.stringify({
+          type: "result",
+          subtype: "success",
+          result: "## Release Notes\n\nFinal",
+          session_id: "test-session",
+          is_error: false,
+          cost_usd: 0.01,
+          duration_ms: 1000,
+        }) +
+        "\n";
+      return createMockProcess(Buffer.from(multiLineOutput));
     });
 
     const notes = await generateNotes({ cleanOutput: false }, mockContext);
-    expect(notes).toBe('## Release Notes\n\nFinal');
+    expect(notes).toBe("## Release Notes\n\nFinal");
   });
 });
 
-describe('extractReleaseNotes', () => {
-  const version = '1.2.3';
-  
-  it('should extract notes starting with version header', () => {
+describe("extractReleaseNotes", () => {
+  const version = "1.2.3";
+
+  it("should extract notes starting with version header", () => {
     const input = `Now I'll analyze the commits and create the release notes.
     
 ## ${version} (2023-05-15)
@@ -274,7 +485,6 @@ describe('extractReleaseNotes', () => {
 
 ### Bug Fixes
 - Fix 1`;
-    
     const result = extractReleaseNotes(input, version);
     expect(result).toBe(`## ${version} (2023-05-15)
 
@@ -285,55 +495,50 @@ describe('extractReleaseNotes', () => {
 ### Bug Fixes
 - Fix 1`);
   });
-  
-  it('should handle version with date format', () => {
+
+  it("should handle version with date format", () => {
     const input = `Let me analyze these commits for you.
     
 ## ${version} (2023-05-15)
 
 ### Features
 - Feature 1`;
-    
     const result = extractReleaseNotes(input, version);
     expect(result).toBe(`## ${version} (2023-05-15)
 
 ### Features
 - Feature 1`);
   });
-  
-  it('should find any markdown h2 header if exact version not found', () => {
+
+  it("should find any markdown h2 header if exact version not found", () => {
     const input = `I'll generate release notes based on these commits.
     
 ## Release Notes (${version})
 
 ### Features
 - Feature 1`;
-    
     const result = extractReleaseNotes(input, version);
     expect(result).toBe(`## Release Notes (${version})
 
 ### Features
 - Feature 1`);
   });
-  
-  it('should return original text if no headers found', () => {
+
+  it("should return original text if no headers found", () => {
     const input = `No headers in this text.
 Just some random content without markdown headers.`;
-    
     const result = extractReleaseNotes(input, version);
     expect(result).toBe(input);
   });
-  
-  it('should handle version strings with special regex characters', () => {
-    // Test with a version containing backslashes
-    const specialVersion = '1.0.0\\beta';
+
+  it("should handle version strings with special regex characters", () => {
+    const specialVersion = "1.0.0\\beta";
     const input = `Here's some preamble text.
     
 ## ${specialVersion} (2023-05-15)
 
 ### Features
 - Feature 1`;
-    
     const result = extractReleaseNotes(input, specialVersion);
     expect(result).toBe(`## ${specialVersion} (2023-05-15)
 
@@ -342,99 +547,75 @@ Just some random content without markdown headers.`;
   });
 });
 
-describe('cleanOutput option', () => {
+describe("cleanOutput option", () => {
   const mockContext: any = {
-    logger: {
-      log: jest.fn(),
-      error: jest.fn()
-    },
-    nextRelease: {
-      version: '1.0.0'
-    },
-    options: {
-      repositoryUrl: 'https://github.com/user/repo.git'
-    }
+    logger: { log: jest.fn(), error: jest.fn() },
+    nextRelease: { version: "1.0.0" },
+    options: { repositoryUrl: "https://github.com/user/repo.git" },
   };
 
   beforeEach(() => {
     jest.clearAllMocks();
-    (getCommits as jest.Mock).mockResolvedValue([{
-      message: 'feat: add new feature',
-      hash: 'abc1234',
-      committer: { name: 'Developer 1' },
-      committerDate: '2023-01-01'
-    }]);
+    (getCommits as jest.Mock).mockResolvedValue([
+      {
+        message: "feat: add new feature",
+        hash: "abc1234",
+        committer: { name: "Developer 1" },
+        committerDate: "2023-01-01",
+      },
+    ]);
+    setDefaultExecaImplementation();
   });
 
-  it('should use cleanOutput by default', async () => {
-    // Setup mock execa with response containing preamble
-    const execa = require('execa').default;
+  it("should use cleanOutput by default", async () => {
     const preambleContent = `Now I'll analyze these commits and generate release notes.
               
 ## 1.0.0 (2023-05-15)
 
 ### Features
 - Added new feature X`;
-    
-    execa.mockImplementationOnce(() => {
-      const stdout = {
-        on: jest.fn().mockImplementation((event, cb) => {
-          if (event === 'data') {
-            cb(JSON.stringify({ role: 'system', result: preambleContent }));
-          }
-          return stdout;
+    mockedExeca.mockImplementationOnce((): ExecaChildProcess<Buffer> => {
+      const resultBuffer = Buffer.from(
+        JSON.stringify({
+          type: "result",
+          subtype: "success",
+          result: preambleContent,
+          session_id: "test-session-preamble",
+          is_error: false,
         })
-      };
-      
-      return {
-        stdout,
-        then: (cb) => Promise.resolve().then(() => cb())
-      };
+      );
+      return createMockProcess(resultBuffer);
     });
-
-    // Run with default options
     const result = await generateNotes({}, mockContext);
-    
-    // Verify the log messages that indicate the cleaning happened
-    expect(mockContext.logger.log).toHaveBeenCalledWith('Cleaned release notes to remove any AI preamble');
-    
-    // Check the result doesn't have the preamble
+    expect(mockContext.logger.log).toHaveBeenCalledWith(
+      "Cleaned release notes to remove any AI preamble"
+    );
     expect(result).not.toContain("Now I'll analyze");
   });
 
-  it('should skip cleaning when cleanOutput is false', async () => {
-    // Setup mock execa with response containing preamble
-    const execa = require('execa').default;
+  it("should skip cleaning when cleanOutput is false", async () => {
     const preambleContent = `Now I'll analyze these commits and generate release notes.
               
 ## 1.0.0 (2023-05-15)
 
 ### Features
 - Added new feature X`;
-    
-    execa.mockImplementationOnce(() => {
-      const stdout = {
-        on: jest.fn().mockImplementation((event, cb) => {
-          if (event === 'data') {
-            cb(JSON.stringify({ role: 'system', result: preambleContent }));
-          }
-          return stdout;
+    mockedExeca.mockImplementationOnce((): ExecaChildProcess<Buffer> => {
+      const resultBuffer = Buffer.from(
+        JSON.stringify({
+          type: "result",
+          subtype: "success",
+          result: preambleContent,
+          session_id: "test-session-no-clean",
+          is_error: false,
         })
-      };
-      
-      return {
-        stdout,
-        then: (cb) => Promise.resolve().then(() => cb())
-      };
+      );
+      return createMockProcess(resultBuffer);
     });
-
-    // Run with cleanOutput = false
     const result = await generateNotes({ cleanOutput: false }, mockContext);
-    
-    // Verify the log messages that indicate cleaning was skipped
-    expect(mockContext.logger.log).toHaveBeenCalledWith('Skipping output cleaning (disabled by configuration)');
-    
-    // The result should contain the preamble text since we didn't clean it
+    expect(mockContext.logger.log).toHaveBeenCalledWith(
+      "Skipping output cleaning (disabled by configuration)"
+    );
     expect(result).toContain("Now I'll analyze");
   });
 });
