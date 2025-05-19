@@ -204,7 +204,6 @@ The integration test:
 - Outputs the generated release notes for manual inspection
 
 ## How It Works
-
 The plugin focuses solely on generating release notes and works as follows:
 
 1. In the `generateNotes` step, the plugin:
