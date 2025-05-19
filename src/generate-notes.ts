@@ -226,73 +226,55 @@ export async function generateNotes(
     // Clean up temp file
     unlinkSync(tmpFile);
     
-    // Parse Claude's response from stream-json format, prioritizing the system result
+    // Parse Claude's response from stream-json format and use the last valid message
     let responseText = '';
     try {
-      // With stream-json, the output is a series of JSON objects, one per line
       const lines = stdout.split('\n').filter(line => line.trim().length > 0);
-      
-      // First, look for the system result message (the official final result)
-      let systemResult = '';
+
+      // Collect all valid JSON objects
+      const parsedObjects: ClaudeMessage[] = [];
       for (const line of lines) {
         try {
-          const jsonObj = JSON.parse(line);
-          if (jsonObj.role === 'system' && jsonObj.result) {
-            systemResult = jsonObj.result;
+          parsedObjects.push(JSON.parse(line));
+        } catch {
+          // Ignore lines that are not valid JSON
+        }
+      }
+
+      // Walk backwards to find the last system.result or assistant message
+      for (let i = parsedObjects.length - 1; i >= 0; i--) {
+        const obj: any = parsedObjects[i];
+        if (obj.role === 'system' && obj.result) {
+          responseText = obj.result;
+          break;
+        }
+        if (obj.role === 'assistant') {
+          if (obj.type === 'message') {
+            if (Array.isArray(obj.content)) {
+              const textBlocks = obj.content.filter((c: any) => c.type === 'text');
+              if (textBlocks.length > 0) {
+                responseText = textBlocks.map((b: any) => b.text).join('\n');
+                break;
+              }
+            } else if (typeof obj.content === 'string') {
+              responseText = obj.content;
+              break;
+            }
+          } else if (obj.type === 'content_block' && obj.content_block?.type === 'text') {
+            responseText = obj.content_block.text;
             break;
           }
-        } catch (e) {
-          // Skip invalid JSON
         }
       }
-      
-      // If we found a system result, use it
-      if (systemResult) {
-        logger.log('Using system result message');
-        responseText = systemResult;
-      } 
-      // If no system result, fall back to assistant messages
-      else {
-        logger.log('No system result found, falling back to assistant messages');
-        
-        // Collect text from assistant messages
-        for (const line of lines) {
-          try {
-            const jsonObj = JSON.parse(line);
-            
-            // Extract text from assistant messages
-            if (jsonObj.role === 'assistant' && jsonObj.type === 'message') {
-              if (Array.isArray(jsonObj.content)) {
-                // Find text content blocks (exclude tool_use blocks)
-                const textBlocks = jsonObj.content.filter((c: any) => c.type === 'text');
-                if (textBlocks.length > 0) {
-                  const text = textBlocks.map((b: any) => b.text).join('\n');
-                  responseText += text;
-                }
-              } else if (typeof jsonObj.content === 'string') {
-                responseText += jsonObj.content;
-              }
-            } else if (jsonObj.role === 'assistant' && jsonObj.type === 'content_block') {
-              // Handle individual content blocks in stream mode
-              if (jsonObj.content_block.type === 'text') {
-                responseText += jsonObj.content_block.text;
-              }
-            }
-          } catch (e) {
-            // Skip invalid JSON
-          }
-        }
-      }
-      
-      // If still no text, use raw stdout
+
+      // Fallback if nothing valid was parsed
       if (!responseText) {
-        logger.log('No valid response found, using raw stdout');
-        responseText = stdout;
+        logger.log('No valid response found, using fallback message');
+        responseText = 'General fixes and updates';
       }
     } catch (e) {
-      // If parsing fails, use the raw output
       logger.error('Error parsing Claude output', e);
-      responseText = stdout;
+      responseText = 'General fixes and updates';
     }
     
     logger.log('Successfully generated release notes');
