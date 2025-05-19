@@ -232,6 +232,32 @@ describe('generateNotes', () => {
     expect(promptArg).toContain('Custom template 1.0.0');
     expect(promptArg).toContain('Additional context information');
   });
+
+  it('should use the last valid JSON message when output contains invalid lines', async () => {
+    const execa = require('execa').default;
+
+    execa.mockImplementationOnce(() => {
+      const stdout = {
+        on: jest.fn().mockImplementation((event, cb) => {
+          if (event === 'data') {
+            cb('not-json');
+            cb(JSON.stringify({ role: 'assistant', type: 'message', content: 'First' }));
+            cb('broken {');
+            cb(JSON.stringify({ role: 'system', result: '## Release Notes\n\nFinal' }));
+          }
+          return stdout;
+        })
+      };
+
+      return {
+        stdout,
+        then: (cb) => Promise.resolve().then(() => cb())
+      };
+    });
+
+    const notes = await generateNotes({ cleanOutput: false }, mockContext);
+    expect(notes).toBe('## Release Notes\n\nFinal');
+  });
 });
 
 describe('extractReleaseNotes', () => {
