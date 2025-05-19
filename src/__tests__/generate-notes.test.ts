@@ -240,10 +240,10 @@ describe('generateNotes', () => {
       const stdout = {
         on: jest.fn().mockImplementation((event, cb) => {
           if (event === 'data') {
-            cb('not-json');
-            cb(JSON.stringify({ role: 'assistant', type: 'message', content: 'First' }));
-            cb('broken {');
-            cb(JSON.stringify({ role: 'system', result: '## Release Notes\n\nFinal' }));
+            cb('not-json\n');
+            cb(JSON.stringify({ role: 'assistant', type: 'message', content: 'First' }) + '\n');
+            cb('broken {\n');
+            cb(JSON.stringify({ role: 'system', result: '## Release Notes\n\nFinal' }) + '\n');
           }
           return stdout;
         })
