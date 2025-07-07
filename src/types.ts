@@ -51,4 +51,12 @@ export interface PluginConfig {
    * @default true
    */
   cleanOutput?: boolean;
+  
+  /**
+   * Escaping mode for the generated release notes
+   * - 'shell': Escapes quotes, backslashes, dollar signs, and backticks for safe use in shell commands (default)
+   * - 'none': No escaping applied
+   * @default 'shell'
+   */
+  escaping?: 'shell' | 'none';
 }

@@ -4,6 +4,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { writeFileSync, unlinkSync } from "fs";
 import { getCommits } from "./get-commits";
+import { escapeText } from "./shell-escape";
 import execa from "execa";
 
 /**
@@ -138,6 +139,7 @@ export async function generateNotes(
     promptTemplate = DEFAULT_PROMPT_TEMPLATE,
     maxCommits = 100,
     cleanOutput = true,
+    escaping = "shell",
   } = pluginConfig;
 
   // Get relevant commits between last and current release
@@ -407,6 +409,7 @@ export async function generateNotes(
     logger.log("Successfully generated release notes");
 
     // If cleanOutput is enabled, extract just the release notes section
+    let finalOutput: string;
     if (cleanOutput) {
       // Look for a markdown header with the version number as the starting point
       const cleanedResponse = extractReleaseNotes(
@@ -414,12 +417,20 @@ export async function generateNotes(
         context.nextRelease?.version || "unknown"
       );
       logger.log("Cleaned release notes to remove any AI preamble");
-      return cleanedResponse.trim();
+      finalOutput = cleanedResponse.trim();
     } else {
       // Return the raw output if cleaning is disabled
       logger.log("Skipping output cleaning (disabled by configuration)");
-      return responseText.trim();
+      finalOutput = responseText.trim();
     }
+    
+    // Apply escaping based on configuration
+    const escapedOutput = escapeText(finalOutput, escaping);
+    if (escaping === 'shell') {
+      logger.log("Applied shell escaping to release notes");
+    }
+    
+    return escapedOutput;
   } catch (error) {
     logger.error("Error generating release notes with Claude", error);
     return "## Release Notes\n\nNo release notes generated due to an error.";

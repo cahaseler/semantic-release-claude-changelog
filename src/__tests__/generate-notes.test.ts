@@ -15,6 +15,7 @@ jest.mock("fs", () => ({
 jest.mock("os", () => ({
   tmpdir: jest.fn().mockReturnValue("/tmp"),
 }));
+
 jest.mock("path", () => ({
   join: jest.fn().mockImplementation((...args: string[]) => args.join("/")),
 }));
@@ -466,7 +467,7 @@ describe("generateNotes", () => {
       return createMockProcess(Buffer.from(multiLineOutput));
     });
 
-    const notes = await generateNotes({ cleanOutput: false }, mockContext);
+    const notes = await generateNotes({ cleanOutput: false, escaping: 'none' }, mockContext);
     expect(notes).toBe("## Release Notes\n\nFinal");
   });
 });
@@ -612,10 +613,143 @@ describe("cleanOutput option", () => {
       );
       return createMockProcess(resultBuffer);
     });
-    const result = await generateNotes({ cleanOutput: false }, mockContext);
+    const result = await generateNotes({ cleanOutput: false, escaping: 'none' }, mockContext);
     expect(mockContext.logger.log).toHaveBeenCalledWith(
       "Skipping output cleaning (disabled by configuration)"
     );
     expect(result).toContain("Now I'll analyze");
+  });
+
+  describe("shell escaping", () => {
+    it("should apply shell escaping by default", async () => {
+      const releaseNotesWithQuotes = `## 1.0.0
+
+### Features
+- Fixed tests that weren't running
+- Added "config" option
+- Support for \`npm install\``;
+
+      mockedExeca.mockImplementationOnce((): ExecaChildProcess<Buffer> => {
+        const resultBuffer = Buffer.from(
+          JSON.stringify({
+            type: "result",
+            subtype: "success",
+            result: releaseNotesWithQuotes,
+            session_id: "test-session-escaping",
+            is_error: false,
+          })
+        );
+        return createMockProcess(resultBuffer);
+      });
+
+      const result = await generateNotes({}, mockContext);
+      expect(mockContext.logger.log).toHaveBeenCalledWith(
+        "Applied shell escaping to release notes"
+      );
+      // Check that the result is properly quoted by shescape
+      // Shescape wraps the entire output in single quotes and escapes internal single quotes
+      expect(result).toBe(`'## 1.0.0
+
+### Features
+- Fixed tests that weren'\\''t running
+- Added "config" option
+- Support for \`npm install\`'`);
+    });
+
+    it("should not escape when escaping is set to 'none'", async () => {
+      const releaseNotesWithQuotes = `## 1.0.0
+
+### Features
+- Fixed tests that weren't running
+- Added "config" option
+- Support for \`npm install\``;
+
+      mockedExeca.mockImplementationOnce((): ExecaChildProcess<Buffer> => {
+        const resultBuffer = Buffer.from(
+          JSON.stringify({
+            type: "result",
+            subtype: "success",
+            result: releaseNotesWithQuotes,
+            session_id: "test-session-no-escaping",
+            is_error: false,
+          })
+        );
+        return createMockProcess(resultBuffer);
+      });
+
+      const result = await generateNotes({ escaping: 'none' }, mockContext);
+      expect(mockContext.logger.log).not.toHaveBeenCalledWith(
+        "Applied shell escaping to release notes"
+      );
+      // Check that special characters are NOT escaped
+      expect(result).toContain("weren't");
+      expect(result).toContain('"config"');
+      expect(result).toContain('`npm install`');
+      expect(result).not.toContain("'\\''");
+      expect(result).not.toContain('\\"');
+      expect(result).not.toContain('\\`');
+    });
+
+    it("should escape complex shell characters", async () => {
+      const releaseNotesWithComplexChars = `## 1.0.0
+
+### Features
+- Support for $HOME directory
+- Fixed C:\\Users\\path issues
+- Command: echo "Hello \${WORLD}"`;
+
+      mockedExeca.mockImplementationOnce((): ExecaChildProcess<Buffer> => {
+        const resultBuffer = Buffer.from(
+          JSON.stringify({
+            type: "result",
+            subtype: "success",
+            result: releaseNotesWithComplexChars,
+            session_id: "test-session-complex",
+            is_error: false,
+          })
+        );
+        return createMockProcess(resultBuffer);
+      });
+
+      const result = await generateNotes({}, mockContext);
+      // Shescape wraps in single quotes, so special chars don't need escaping inside
+      expect(result).toBe(`'## 1.0.0
+
+### Features
+- Support for $HOME directory
+- Fixed C:\\Users\\path issues
+- Command: echo "Hello \${WORLD}"'`);
+    });
+
+    it("should combine cleaning and escaping correctly", async () => {
+      const preambleContent = `Now I'll analyze these commits.
+              
+## 1.0.0
+
+### Features
+- Fixed things that weren't working`;
+
+      mockedExeca.mockImplementationOnce((): ExecaChildProcess<Buffer> => {
+        const resultBuffer = Buffer.from(
+          JSON.stringify({
+            type: "result",
+            subtype: "success",
+            result: preambleContent,
+            session_id: "test-session-clean-escape",
+            is_error: false,
+          })
+        );
+        return createMockProcess(resultBuffer);
+      });
+
+      const result = await generateNotes({ cleanOutput: true }, mockContext);
+      // Should be both cleaned and escaped
+      expect(result).not.toContain("Now I'll analyze");
+      // The cleaned result should be wrapped in quotes with escaped single quote
+      expect(result).toBe(`'## 1.0.0
+
+### Features
+- Fixed things that weren'\\''t working'`);
+    });
   });
 });
