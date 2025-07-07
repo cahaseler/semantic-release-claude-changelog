@@ -41,6 +41,7 @@ The plugin can be configured in the [**semantic-release** configuration file](ht
 | `maxCommits` | Maximum number of commits to include in the prompt | `100` |
 | `additionalContext` | Additional context information (PRs, issues, etc.) | `undefined` |
 | `cleanOutput` | Whether to automatically extract only the release notes section | `true` |
+| `escaping` | How to escape the output: `'shell'` (escapes quotes and special chars) or `'none'` | `'shell'` |
 
 ### Default Prompt Template
 
@@ -106,6 +107,34 @@ You can disable this behavior by setting `cleanOutput: false` in your configurat
 ```
 
 If you're using a custom prompt that doesn't follow the standard markdown header format, you might want to disable automatic cleaning.
+
+### Shell Escaping
+
+By default, the plugin escapes special characters in the generated release notes to ensure they work safely in shell commands. This prevents issues when semantic-release plugins use `${nextRelease.notes}` in shell contexts.
+
+The following characters are escaped:
+- Single quotes (`'`) → `'\''`
+- Double quotes (`"`) → `\"`
+- Backslashes (`\`) → `\\`
+- Dollar signs (`$`) → `\$`
+- Backticks (`` ` ``) → `` \` ``
+
+This ensures that release notes containing words like "weren't" or "can't" won't break shell commands in downstream plugins.
+
+If you need the raw, unescaped output (for example, if you're not using the notes in shell commands), you can disable escaping:
+
+```json
+{
+  "plugins": [
+    "@semantic-release/commit-analyzer",
+    ["semantic-release-claude-changelog", {
+      "escaping": "none"
+    }],
+    "@semantic-release/npm",
+    "@semantic-release/github"
+  ]
+}
+```
 
 ### Using Additional Context
 
