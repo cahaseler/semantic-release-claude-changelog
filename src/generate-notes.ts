@@ -169,6 +169,44 @@ export async function generateNotes(
     return commitInfo;
   });
 
+  // Validate custom prompt template if provided
+  if (pluginConfig.promptTemplate) {
+    // Check for required placeholders
+    if (!promptTemplate.includes("{{commits}}")) {
+      logger.warn(
+        "⚠️  Custom prompt template is missing {{commits}} placeholder - commit data will not be included in the prompt!"
+      );
+      logger.warn(
+        "Consider adding {{commits}} to your template or using the default template."
+      );
+    }
+    
+    // Warn about other useful placeholders
+    const missingPlaceholders = [];
+    if (!promptTemplate.includes("{{version}}")) {
+      missingPlaceholders.push("{{version}}");
+    }
+    if (!promptTemplate.includes("{{date}}")) {
+      missingPlaceholders.push("{{date}}");
+    }
+    if (!promptTemplate.includes("{{repoName}}")) {
+      missingPlaceholders.push("{{repoName}}");
+    }
+    
+    if (missingPlaceholders.length > 0) {
+      logger.log(
+        `ℹ️  Custom prompt template is missing optional placeholders: ${missingPlaceholders.join(", ")}`
+      );
+    }
+    
+    // Check for conditional context block if additionalContext is provided
+    if (pluginConfig.additionalContext && !promptTemplate.includes("{{#additionalContext}}")) {
+      logger.warn(
+        "⚠️  Custom prompt template is missing {{#additionalContext}}...{{/additionalContext}} block - additional context will be appended to the end of the prompt."
+      );
+    }
+  }
+
   // Prepare the prompt for Claude
   let prompt = promptTemplate
     .replace("{{version}}", releaseVersion)
