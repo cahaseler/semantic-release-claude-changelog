@@ -275,7 +275,7 @@ setDefaultExecaImplementation();
 
 describe("generateNotes", () => {
   const mockContext: any = {
-    logger: { log: jest.fn(), error: jest.fn() },
+    logger: { log: jest.fn(), error: jest.fn(), warn: jest.fn() },
     nextRelease: { version: "1.0.0" },
     options: { repositoryUrl: "https://github.com/user/repo.git" },
   };
@@ -550,9 +550,18 @@ Just some random content without markdown headers.`;
 
 describe("cleanOutput option", () => {
   const mockContext: any = {
-    logger: { log: jest.fn(), error: jest.fn() },
+    logger: { log: jest.fn(), error: jest.fn(), warn: jest.fn() },
     nextRelease: { version: "1.0.0" },
     options: { repositoryUrl: "https://github.com/user/repo.git" },
+  };
+
+  const mockAdditionalContext = {
+    pullRequests: [
+      { number: 123, title: "Add new feature", url: "https://github.com/user/repo/pull/123" }
+    ],
+    issues: [
+      { number: 456, title: "Bug in feature", url: "https://github.com/user/repo/issues/456" }
+    ]
   };
 
   beforeEach(() => {
@@ -618,6 +627,88 @@ describe("cleanOutput option", () => {
       "Skipping output cleaning (disabled by configuration)"
     );
     expect(result).toContain("Now I'll analyze");
+  });
+
+  describe("custom prompt template validation", () => {
+    it("should warn if custom template is missing {{commits}} placeholder", async () => {
+      const customTemplate = "Generate release notes for my project";
+      await generateNotes(
+        { promptTemplate: customTemplate, escaping: 'none' },
+        mockContext
+      );
+      expect(mockContext.logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining("missing {{commits}} placeholder")
+      );
+    });
+
+    it("should log info about missing optional placeholders", async () => {
+      const customTemplate = "Generate notes for {{commits}}";
+      await generateNotes(
+        { promptTemplate: customTemplate, escaping: 'none' },
+        mockContext
+      );
+      expect(mockContext.logger.log).toHaveBeenCalledWith(
+        expect.stringContaining("missing optional placeholders: {{version}}, {{date}}, {{repoName}}")
+      );
+    });
+
+    it("should warn about missing additionalContext block when context is provided", async () => {
+      const customTemplate = "Generate notes for {{version}} with {{commits}}";
+      await generateNotes(
+        { 
+          promptTemplate: customTemplate, 
+          additionalContext: mockAdditionalContext,
+          escaping: 'none' 
+        },
+        mockContext
+      );
+      expect(mockContext.logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining("missing {{#additionalContext}}...{{/additionalContext}} block")
+      );
+    });
+
+    it("should not warn when all placeholders are present", async () => {
+      const customTemplate = `Generate notes for {{repoName}} {{version}} ({{date}})
+{{commits}}
+{{#additionalContext}}Context: {{additionalContext}}{{/additionalContext}}`;
+      
+      // Clear previous mock calls
+      mockContext.logger.warn.mockClear();
+      mockContext.logger.log.mockClear();
+      
+      await generateNotes(
+        { 
+          promptTemplate: customTemplate,
+          additionalContext: mockAdditionalContext,
+          escaping: 'none'
+        },
+        mockContext
+      );
+      
+      // Should not have any warnings about missing placeholders
+      expect(mockContext.logger.warn).not.toHaveBeenCalledWith(
+        expect.stringContaining("missing {{commits}} placeholder")
+      );
+      expect(mockContext.logger.warn).not.toHaveBeenCalledWith(
+        expect.stringContaining("missing {{#additionalContext}}")
+      );
+      // The info log about optional placeholders should also not appear
+      expect(mockContext.logger.log).not.toHaveBeenCalledWith(
+        expect.stringContaining("missing optional placeholders")
+      );
+    });
+
+    it("should not validate when using default template", async () => {
+      // Clear previous mock calls
+      mockContext.logger.warn.mockClear();
+      
+      await generateNotes({ escaping: 'none' }, mockContext);
+      
+      // Should not have any warnings since we're using the default template
+      expect(mockContext.logger.warn).not.toHaveBeenCalledWith(
+        expect.stringContaining("missing {{commits}} placeholder")
+      );
+    });
   });
 
   describe("shell escaping", () => {

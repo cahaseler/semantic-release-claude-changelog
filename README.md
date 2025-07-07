@@ -81,6 +81,32 @@ Your response must ONLY contain the release notes in Markdown format - nothing e
 
 You can customize this template to match your project's needs.
 
+#### Custom Prompt Template Requirements
+
+When creating a custom prompt template, make sure to include these placeholders:
+
+**Required placeholders:**
+- `{{commits}}` - The commit data in JSON format (⚠️ **Without this, no commit data will be included!**)
+
+**Recommended placeholders:**
+- `{{version}}` - The version number being released
+- `{{date}}` - The release date
+- `{{repoName}}` - The repository name
+- `{{#additionalContext}}...{{/additionalContext}}` - Conditional block for additional context (PRs, issues, etc.)
+
+**Example custom template:**
+```json
+{
+  "plugins": [
+    ["semantic-release-claude-changelog", {
+      "promptTemplate": "Generate user-friendly release notes for {{repoName}} version {{version}}.\n\nCommits:\n```json\n{{commits}}\n```\n\n{{#additionalContext}}Context:\n```json\n{{additionalContext}}\n```\n{{/additionalContext}}\n\nFocus on security updates and breaking changes."
+    }]
+  ]
+}
+```
+
+**Important:** The plugin will warn you if your custom template is missing required placeholders. Always test your custom templates to ensure they generate appropriate release notes.
+
 ### Output Cleaning
 
 By default, the plugin will attempt to clean Claude's response to extract only the actual release notes section. This is done by:
