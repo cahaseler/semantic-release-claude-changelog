@@ -1,11 +1,8 @@
 import { Context, PluginConfig } from "./types";
 import { DEFAULT_PROMPT_TEMPLATE } from "./constants";
-import { tmpdir } from "os";
-import { join } from "path";
-import { writeFileSync, unlinkSync } from "fs";
 import { getCommits } from "./get-commits";
 import { escapeText } from "./shell-escape";
-import execa from "execa";
+import { query } from "@anthropic-ai/claude-agent-sdk";
 
 /**
  * Extracts the actual release notes section from Claude's response
@@ -37,97 +34,8 @@ export function extractReleaseNotes(text: string, version: string): string {
   return text;
 }
 
-// Define interfaces for Claude output format
-
-// Base text block
-interface TextBlock {
-  type: "text"; // More specific
-  text: string;
-}
-
-// For tool use blocks within assistant messages
-interface ToolUseBlock {
-  type: "tool_use";
-  id: string;
-  name: string;
-  input: Record<string, unknown>;
-}
-
-// For messages like: {"type":"system","subtype":"init",...}
-interface ClaudeSystemInitMessage {
-  type: "system";
-  subtype: "init";
-  session_id: string;
-  tools: string[];
-  mcp_servers: any[];
-}
-
-// For the content part of an assistant message
-interface ClaudeAssistantContentMessage {
-  id: string;
-  type: "message"; // This is a sub-type within the assistant message wrapper
-  role: "assistant";
-  model: string;
-  content: (TextBlock | ToolUseBlock)[]; // Content is an array of blocks
-  stop_reason: string | null; // Can be null
-  stop_sequence: string | null;
-  usage: {
-    input_tokens: number;
-    cache_creation_input_tokens?: number;
-    cache_read_input_tokens?: number;
-    output_tokens: number;
-  };
-}
-
-// Wrapper for assistant messages: {"type":"assistant","message":{...}}
-interface ClaudeAssistantMessageWrapper {
-  type: "assistant";
-  message: ClaudeAssistantContentMessage;
-  session_id: string;
-}
-
-// For tool result content within user messages
-interface ClaudeUserToolResultMessage {
-  tool_use_id: string;
-  type: "tool_result";
-  content: string | TextBlock[]; // More specific based on observed logs
-  is_error?: boolean;
-}
-
-// Wrapper for user messages: {"type":"user","message":{...}}
-interface ClaudeUserMessageWrapper {
-  type: "user";
-  message: {
-    role: "user";
-    content: ClaudeUserToolResultMessage[];
-  };
-  session_id: string;
-}
-
-// For the final result message: {"type":"result","subtype":"success", ...}
-interface ClaudeFinalResultMessage {
-  type: "result";
-  subtype: "success" | "error"; // And potentially others
-  cost_usd?: number;
-  is_error: boolean;
-  duration_ms?: number;
-  duration_api_ms?: number;
-  num_turns?: number;
-  result?: string; // Present on success
-  error?: unknown; // Present on error (structure unknown)
-  total_cost?: number;
-  session_id: string;
-}
-
-// Union of all possible top-level JSON objects in the stream
-type ClaudeStreamOutputLine =
-  | ClaudeSystemInitMessage
-  | ClaudeAssistantMessageWrapper
-  | ClaudeUserMessageWrapper
-  | ClaudeFinalResultMessage;
-
 /**
- * Generates release notes using Claude Code CLI
+ * Generates release notes using Claude Agent SDK
  */
 export async function generateNotes(
   pluginConfig: PluginConfig,
@@ -135,11 +43,11 @@ export async function generateNotes(
 ): Promise<string> {
   const { logger } = context;
   const {
-    claudePath = "claude",
     promptTemplate = DEFAULT_PROMPT_TEMPLATE,
     maxCommits = 100,
     cleanOutput = true,
     escaping = "shell",
+    maxTurns = 10,
   } = pluginConfig;
 
   // Get relevant commits between last and current release
@@ -329,118 +237,36 @@ export async function generateNotes(
     prompt = result;
   }
 
-  logger.log("Generating release notes with Claude...");
+  logger.log("Generating release notes with Claude Agent SDK...");
 
   try {
-    // Create a timestamp for the temporary file
-    const timestamp = new Date().getTime();
-    const tmpFile = join(tmpdir(), `claude-prompt-${timestamp}.txt`);
-
-    // Write the prompt to the temporary file
-    writeFileSync(tmpFile, prompt);
-
-    // Call Claude Code CLI in headless mode with the prompt
-    logger.log(
-      "Running Claude Code CLI in headless mode with streaming output"
-    );
-
-    const subprocess = execa(
-      claudePath,
-      ["-p", "--verbose", "--output-format", "stream-json", `@${tmpFile}`],
-      {
-        stdio: ["ignore", "pipe", "inherit"],
-      }
-    );
-
-    // Capture stdout for processing
-    let stdout = ""; // Reverted to 'stdout'
-    if (subprocess.stdout) {
-      subprocess.stdout.on("data", (data: Buffer) => {
-        const chunk = data.toString();
-        stdout += chunk;
-        logger.log("Claude output:", chunk);
-      });
-      subprocess.stdout.on("error", (err) => {
-        // Good to have error handling on stream
-        logger.error("Claude stdout stream error during data collection:", err);
-      });
-    }
-
-    try {
-      await subprocess; // Wait for process to complete. This promise should resolve after stdout/stderr have closed.
-    } catch (error) {
-      // If subprocess itself throws (e.g., command not found, or if it's a rejecting promise from mock)
-      // We might have partial stdout, or none. The current logic handles this by trying to parse `stdout` anyway.
-      logger.error("Subprocess execution resulted in an error:", error);
-      // Fallback will be used if stdout remains empty or unparseable.
-    }
-
-    // Clean up temp file
-    unlinkSync(tmpFile);
-
-    // Parse Claude's response from stream-json format and use the last valid message
+    // Call Claude Agent SDK with the prompt
     let responseText = "";
-    try {
-      const lines = stdout.split("\n").filter((line) => line.trim().length > 0);
 
-      // Collect all valid JSON objects
-      const parsedObjects: ClaudeStreamOutputLine[] = [];
-      for (const line of lines) {
-        try {
-          parsedObjects.push(JSON.parse(line) as ClaudeStreamOutputLine);
-        } catch (parseError) {
-          // logger.log('Ignoring non-JSON line or parse error:', parseError, line);
-        }
+    for await (const msg of query({
+      prompt,
+      options: { maxTurns }
+    })) {
+      // Log progress messages
+      if (msg.type === "assistant" || msg.type === "user") {
+        logger.log("Claude processing...");
       }
 
-      // Walk backwards to find the last final result message or a suitable assistant message
-      for (let i = parsedObjects.length - 1; i >= 0; i--) {
-        const streamLine = parsedObjects[i];
-
-        // Priority 1: Final result message from Claude CLI
-        if (
-          streamLine.type === "result" &&
-          streamLine.subtype === "success" &&
-          typeof streamLine.result === "string"
-        ) {
-          responseText = streamLine.result;
-          logger.log(`Found final result message at index ${i}.`);
-          break;
-        }
-
-        // Priority 2: Last assistant message that contains text and indicates completion
-        if (streamLine.type === "assistant") {
-          const assistantContentMsg = streamLine.message;
-          // Ensure it's a message from the assistant meant as final output
-          if (
-            assistantContentMsg.role === "assistant" &&
-            assistantContentMsg.content &&
-            assistantContentMsg.stop_reason === "end_turn" // Ensure it's a concluding message
-          ) {
-            if (Array.isArray(assistantContentMsg.content)) {
-              const textBlocks = assistantContentMsg.content.filter(
-                (c): c is TextBlock => c.type === "text" // Type guard for TextBlock
-              );
-              if (textBlocks.length > 0) {
-                // Concatenate all text blocks from this final assistant message
-                responseText = textBlocks.map((tb) => tb.text).join("\n");
-                logger.log(
-                  `Found 'end_turn' assistant message with text content at index ${i}.`
-                );
-                break;
-              }
-            }
-          }
+      // Get the final result
+      if (msg.type === "result") {
+        if (msg.subtype === "success" && "result" in msg) {
+          responseText = msg.result;
+          logger.log("Successfully received response from Claude");
+        } else {
+          logger.log("No result in final message or error occurred, using fallback");
+          responseText = "General fixes and updates";
         }
       }
+    }
 
-      // Fallback if nothing valid was parsed
-      if (!responseText) {
-        logger.log("No valid response found, using fallback message");
-        responseText = "General fixes and updates";
-      }
-    } catch (e) {
-      logger.error("Error parsing Claude output", e);
+    // Fallback if no response was received
+    if (!responseText) {
+      logger.log("No valid response found, using fallback message");
       responseText = "General fixes and updates";
     }
 

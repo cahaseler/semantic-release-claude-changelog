@@ -1,3 +1,8 @@
+// Mock the Claude Agent SDK
+jest.mock("@anthropic-ai/claude-agent-sdk", () => ({
+  query: jest.fn(),
+}));
+
 import indexDefault from '../index';
 
 describe('index', () => {

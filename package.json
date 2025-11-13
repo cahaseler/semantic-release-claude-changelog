@@ -1,7 +1,7 @@
 {
   "name": "semantic-release-claude-changelog",
   "version": "1.2.1",
-  "description": "Semantic Release plugin that uses Claude Code CLI to generate high quality release notes",
+  "description": "Semantic Release plugin that uses the Claude Agent SDK to generate high quality release notes",
   "main": "lib/index.js",
   "files": [
     "lib"
@@ -44,6 +44,6 @@
     "typescript": "^5.0.4"
   },
   "dependencies": {
-    "execa": "^5.1.1"
+    "@anthropic-ai/claude-agent-sdk": "^0.1.37"
   }
 }
