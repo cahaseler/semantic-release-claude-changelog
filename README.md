@@ -1,6 +1,6 @@
 # semantic-release-claude-changelog
 
-A [semantic-release](https://github.com/semantic-release/semantic-release) plugin that uses Claude Code CLI in headless mode to generate high-quality release notes suitable for end users based on commit information.
+A [semantic-release](https://github.com/semantic-release/semantic-release) plugin that uses the Claude Agent SDK to generate high-quality release notes suitable for end users based on commit information.
 
 ## Installation
 
@@ -10,8 +10,7 @@ npm install --save-dev semantic-release-claude-changelog
 
 ## Requirements
 
-- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and configured
-- Node.js 16.x or higher
+- Node.js 18.x or higher
 - semantic-release 18.x or higher
 - ANTHROPIC_API_KEY environment variable set
 
@@ -36,9 +35,9 @@ The plugin can be configured in the [**semantic-release** configuration file](ht
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `claudePath` | Path to the Claude Code CLI executable | `claude` |
 | `promptTemplate` | Template for the prompt sent to Claude | See [Default Prompt Template](#default-prompt-template) |
 | `maxCommits` | Maximum number of commits to include in the prompt | `100` |
+| `maxTurns` | Maximum number of turns (interactions) Claude can make | `10` |
 | `additionalContext` | Additional context information (PRs, issues, etc.) | `undefined` |
 | `cleanOutput` | Whether to automatically extract only the release notes section | `true` |
 | `escaping` | How to escape the output: `'shell'` (escapes quotes and special chars) or `'none'` | `'shell'` |
@@ -164,7 +163,7 @@ If you need the raw, unescaped output (for example, if you're not using the note
 
 ### Using Additional Context
 
-The plugin supports providing additional context information to enrich the generated release notes. This context is passed to Claude Code CLI along with the commit information, allowing it to generate more comprehensive and informative release notes.
+The plugin supports providing additional context information to enrich the generated release notes. This context is passed to Claude along with the commit information, allowing it to generate more comprehensive and informative release notes.
 
 Examples of additional context you might want to include:
 - Pull request information (numbers, titles, URLs)
@@ -199,7 +198,7 @@ For dynamic integration with GitHub Actions, see the [examples directory](exampl
 
 ## GitHub Actions Configuration
 
-When using this plugin in GitHub Actions, you need to install Claude Code CLI and set up the ANTHROPIC_API_KEY:
+When using this plugin in GitHub Actions, you need to set up the ANTHROPIC_API_KEY:
 
 ```yaml
 jobs:
@@ -216,8 +215,6 @@ jobs:
           node-version: 20
       - name: Install dependencies
         run: npm ci
-      - name: Install Claude Code CLI
-        run: npm install -g @anthropic-ai/claude-code
       - name: Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -266,10 +263,10 @@ The plugin focuses solely on generating release notes and works as follows:
    - Formats the commit information
    - Processes any additional context information (PRs, issues, etc.)
    - Applies the prompt template
-   - Calls Claude Code CLI in headless mode
+   - Calls the Claude Agent SDK to generate release notes
    - Parses the response and returns the generated release notes
 
-Note: You need to install Claude Code CLI separately as this plugin no longer handles the installation during the prepare step.
+The Claude Agent SDK is included as a dependency of this plugin, so no separate installation is required.
 
 ## License
 

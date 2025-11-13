@@ -23,28 +23,28 @@ export interface Context {
  */
 export interface PluginConfig {
   /**
-   * Path to the Claude Code CLI executable
-   * @default 'claude'
-   */
-  claudePath?: string;
-  
-  /**
    * Template for the prompt sent to Claude
    */
   promptTemplate?: string;
-  
+
   /**
    * Maximum number of commits to include in the prompt
    * @default 100
    */
   maxCommits?: number;
-  
+
+  /**
+   * Maximum number of turns (interactions) Claude can make
+   * @default 10
+   */
+  maxTurns?: number;
+
   /**
    * Additional context to include in the prompt (PRs, issues, etc.)
    * This can be populated by GitHub Actions or other CI systems
    */
   additionalContext?: Record<string, any>;
-  
+
   /**
    * Whether to clean the output and extract only the release notes section
    * When true, the plugin will attempt to find a markdown header with the version number
@@ -52,7 +52,7 @@ export interface PluginConfig {
    * @default true
    */
   cleanOutput?: boolean;
-  
+
   /**
    * Escaping mode for the generated release notes
    * - 'shell': Escapes quotes, backslashes, dollar signs, and backticks for safe use in shell commands (default)

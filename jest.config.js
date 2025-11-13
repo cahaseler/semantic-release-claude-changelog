@@ -17,5 +17,8 @@ module.exports = {
       lines: 75,
       statements: 75
     }
-  }
+  },
+  transformIgnorePatterns: [
+    'node_modules/(?!(@anthropic-ai/claude-agent-sdk)/)'
+  ]
 };
